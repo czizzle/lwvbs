@@ -198,22 +198,27 @@ const CONFIG = {
   tagline:   "Exploring the Nature of God",
   church:    "Living Word Lutheran Church",
   dates:     ["2026-08-03","2026-08-04","2026-08-05","2026-08-06"],
-  // 8 groups, named by color (Living Word's real groups). Yellow + Teal are placeholders for the last two — confirm.
-  crews:     ["Blue","Green","Purple","Orange","Red","Pink","Yellow","Teal"],
-  crewColors:{Blue:"#2f6fb0",Green:"#3d8b40",Purple:"#7e3ea8",Orange:"#e07b2e",Red:"#c0392b",Pink:"#d6417f",Yellow:"#e0a72e",Teal:"#0f9aa6"},
-  stations: ["Sing & Play","Bible Adventure","Imagination Station","Games","Crafts","Snack","Story Theater","Mission Project"],
+  // Living Word's 8 real color crews, grouped by grade band: Blue/Green=K4, Orange/Pink=K5-1st, Purple/Red=1st-2nd, Silver/Yellow=3rd-5th.
+  crews:     ["Blue","Green","Orange","Pink","Purple","Red","Silver","Yellow"],
+  crewColors:{Blue:"#2f6fb0",Green:"#3d8b40",Orange:"#e07b2e",Pink:"#d6417f",Purple:"#7e3ea8",Red:"#c0392b",Silver:"#8f979f",Yellow:"#e0a72e"},
+  // 4 rotation stations (Rainforest Falls names). Opening/snack/closing are all-together blocks (see buildRealSchedule).
+  stations: ["Rooted Bible Adventures","Sticky Scripture","Wild Games","Crafts"],
   // Sample rotation — auto-built from groups × stations (see buildSampleSchedule). Replaced when the real schedule is loaded.
   schedule: [],
-  // Whole-event timeline: setup, VBS days, teardown, celebration. TBD items get real dates from Crystal.
+  // Whole-event timeline (from Todd's deck, slide 7).
   eventCalendar: [
-    {title:"Volunteer meeting & training", tbd:true},
-    {title:"Setup & decorating", tbd:true},
-    {date:"2026-08-03", time:"9:00–11:30 am", title:"VBS Day 1", location:"Living Word Lutheran"},
+    {date:"2026-07-18", time:"9:00–11:30 am", title:"Decorations prep", location:"Kloehn barn"},
+    {date:"2026-07-31", time:"5:30–8:00 pm", title:"Setup"},
+    {date:"2026-08-01", time:"9:00 am–noon", title:"Setup"},
+    {date:"2026-08-02", time:"10:30 am–noon", title:"Setup"},
+    {date:"2026-08-02", time:"9:00 service", title:"Volunteer commissioning & prayer", note:"During worship"},
+    {date:"2026-08-03", time:"9:00–11:30 am", title:"VBS Day 1", location:"Living Word"},
     {date:"2026-08-04", time:"9:00–11:30 am", title:"VBS Day 2"},
     {date:"2026-08-05", time:"9:00–11:30 am", title:"VBS Day 3"},
     {date:"2026-08-06", time:"9:00–11:30 am", title:"VBS Day 4 — last day"},
-    {title:"Teardown & cleanup", tbd:true},
-    {date:"2026-08-09", title:"VBS Celebration Service", location:"Living Word Lutheran", note:"Sunday"}
+    {date:"2026-08-06", time:"11:45 am–1:00 pm", title:"Celebration Lunch"},
+    {date:"2026-08-06", time:"1:00–3:00 pm", title:"Teardown"},
+    {date:"2026-08-09", time:"10:30 am", title:"Sanctuary teardown"}
   ],
   // --- paste these two to go live; leave blank for demo mode ---
   supabaseUrl:     "",
@@ -222,20 +227,22 @@ const CONFIG = {
 const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
 
-// Build a sample rotation for any set of groups/stations (placeholder until the real schedule is loaded)
-function buildSampleSchedule(groups, stations){
-  const slots = [{time:"9:00", all:true, label:"Opening — all groups together"}];
+// Real daily rotation: 4 rotation stations, 2 crews each (grade-band pairs), + all-together
+// opening/snack/closing. Times from the deck; crew start positions can be fine-tuned by Todd.
+function buildRealSchedule(groups, stations){
   const n = stations.length;
-  const times = ["9:15","9:35","9:55","10:15","10:35","10:55","11:15","11:30"];
-  for(let s=0; s<n; s++){
-    const assign = {};
-    groups.forEach((grp,i)=>{ assign[grp] = stations[(i+s)%n]; });
-    slots.push({time: times[s] || (s+1)+"", assign});
-  }
-  slots.push({time:"11:45", all:true, label:"Closing — all groups together"});
-  return slots;
+  const rot = ri => { const a={}; groups.forEach((grp,i)=>{ a[grp]=stations[(Math.floor(i/2)+ri)%n]; }); return a; };
+  return [
+    {time:"9:00–9:15",   all:true, label:"Sing & Play Tune Lagoon — Opening (everyone)"},
+    {time:"9:18–9:38",   label:"Rotation 1", assign:rot(0)},
+    {time:"9:41–10:01",  label:"Rotation 2", assign:rot(1)},
+    {time:"10:04–10:24", all:true, label:"Treetop Treats — Snack (all crews together)"},
+    {time:"10:27–10:47", label:"Rotation 3", assign:rot(2)},
+    {time:"10:50–11:10", label:"Rotation 4", assign:rot(3)},
+    {time:"11:13–11:30", all:true, label:"Canopy Closing (all crews)"}
+  ];
 }
-CONFIG.schedule = buildSampleSchedule(CONFIG.crews, CONFIG.stations);
+CONFIG.schedule = buildRealSchedule(CONFIG.crews, CONFIG.stations);
 
 /* ---------- in-memory cache the UI renders from ---------- */
 const DATA = { children:[], volunteers:[], attendance:{} };
@@ -256,46 +263,49 @@ function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toSt
 /* ============================================================
    DATA LAYER  (demo <-> supabase share one interface)
    ============================================================ */
-const DEMO_KEY = "vbs_demo_v3";
+const DEMO_KEY = "vbs_demo_v4";
 
 function seedDemo(){
   const g=(name,phone,rel,pick=true)=>({name,phone,relationship:rel,canPickup:pick});
   const kids=[
-    {first:"Emma",last:"Bauer",grade:"K",crew:"Blue",allergies:"Peanuts (severe)",medical:"",photoConsent:true,
+    {first:"Emma",last:"Bauer",grade:"K4",crew:"Blue",community:true,allergies:"Peanuts (severe)",medical:"",photoConsent:true,
       guardians:[g("Sarah Bauer","262-555-0111","Mother"),g("Tom Bauer","262-555-0112","Father")],
       emergency:g("Linda Voss","262-555-0199","Grandmother")},
-    {first:"Liam",last:"Schmidt",grade:"2",crew:"Green",allergies:"",medical:"",photoConsent:true,
+    {first:"Liam",last:"Schmidt",grade:"K5",crew:"Orange",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Karen Schmidt","262-555-0121","Mother")],emergency:g("Paul Schmidt","262-555-0122","Uncle")},
-    {first:"Olivia",last:"Meyer",grade:"4",crew:"Purple",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
+    {first:"Olivia",last:"Meyer",grade:"4",crew:"Silver",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
       guardians:[g("Ruth Meyer","262-555-0131","Mother"),g("Dan Meyer","262-555-0132","Father")],emergency:g("Ruth Meyer","262-555-0131","Mother")},
-    {first:"Noah",last:"Wagner",grade:"1",crew:"Orange",allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
+    {first:"Noah",last:"Wagner",grade:"1",crew:"Pink",community:true,allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
       guardians:[g("Amy Wagner","262-555-0141","Mother")],emergency:g("Greg Wagner","262-555-0142","Father")},
-    {first:"Ava",last:"Fischer",grade:"3",crew:"Red",allergies:"",medical:"",photoConsent:true,
+    {first:"Ava",last:"Fischer",grade:"2",crew:"Purple",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Beth Fischer","262-555-0151","Mother"),g("Mark Fischer","262-555-0152","Father")],emergency:g("Beth Fischer","262-555-0151","Mother")},
-    {first:"Mason",last:"Weber",grade:"5",crew:"Pink",allergies:"",medical:"",photoConsent:true,
+    {first:"Mason",last:"Weber",grade:"5",crew:"Silver",community:true,allergies:"",medical:"",photoConsent:true,
       guardians:[g("Julie Weber","262-555-0161","Mother")],emergency:g("Steve Weber","262-555-0162","Father")},
-    {first:"Sophia",last:"Becker",grade:"K",crew:"Yellow",allergies:"Dairy",medical:"",photoConsent:false,
+    {first:"Sophia",last:"Becker",grade:"1",crew:"Pink",allergies:"Dairy",medical:"",photoConsent:false,
       guardians:[g("Nina Becker","262-555-0171","Mother"),g("Grandma Rose","262-555-0173","Grandmother")],emergency:g("Nina Becker","262-555-0171","Mother")},
-    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Teal",allergies:"",medical:"",photoConsent:true,
+    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Purple",community:true,allergies:"",medical:"",photoConsent:true,
       guardians:[g("Kate Hoffmann","262-555-0181","Mother")],emergency:g("Joe Hoffmann","262-555-0182","Father")},
-    {first:"Mia",last:"Keller",grade:"3",crew:"Blue",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
+    {first:"Mia",last:"Keller",grade:"3",crew:"Yellow",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
       guardians:[g("Dana Keller","262-555-0191","Mother"),g("Rob Keller","262-555-0192","Father")],emergency:g("Dana Keller","262-555-0191","Mother")},
-    {first:"Ethan",last:"Braun",grade:"4",crew:"Green",allergies:"",medical:"",photoConsent:true,
+    {first:"Ethan",last:"Braun",grade:"4",crew:"Yellow",community:true,allergies:"",medical:"",photoConsent:true,
       guardians:[g("Lisa Braun","262-555-0201","Mother")],emergency:g("Tim Braun","262-555-0202","Father")},
-    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Purple",allergies:"",medical:"",photoConsent:true,
+    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Orange",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Anne Vogel","262-555-0211","Mother"),g("Chris Vogel","262-555-0212","Father")],emergency:g("Anne Vogel","262-555-0211","Mother")},
-    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Orange",allergies:"",medical:"",photoConsent:false,
+    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Silver",allergies:"",medical:"",photoConsent:false,
       guardians:[g("Meg Zimmerman","262-555-0221","Mother")],emergency:g("Dave Zimmerman","262-555-0222","Father")},
-    {first:"Amelia",last:"Krause",grade:"K",crew:"Red",allergies:"",medical:"",photoConsent:true,
+    {first:"Amelia",last:"Krause",grade:"K4",crew:"Green",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Sara Krause","262-555-0231","Mother"),g("Grandpa Bill","262-555-0233","Grandfather")],emergency:g("Sara Krause","262-555-0231","Mother")},
-    {first:"Jack",last:"Schulz",grade:"2",crew:"Pink",allergies:"Gluten (celiac)",medical:"",photoConsent:true,
+    {first:"Jack",last:"Schulz",grade:"2",crew:"Red",community:true,allergies:"Gluten (celiac)",medical:"",photoConsent:true,
       guardians:[g("Erin Schulz","262-555-0241","Mother")],emergency:g("Nate Schulz","262-555-0242","Father")}
   ].map(k=>({id:uid(),...k}));
   const volunteers=[
     {id:uid(),name:"Todd Klumb",role:"VBS Director / Lead"},
+    {id:uid(),name:"Susie Klumb",role:"Asst Director"},
+    {id:uid(),name:"Karen Kloehn",role:"Asst Director"},
     {id:uid(),name:"Pastor Davis",role:"Pastor"},
-    {id:uid(),name:"Bridget Smedel",role:"Snack team"},
-    {id:uid(),name:"Karen Kentopp",role:"Registration / Check-in"}
+    {id:uid(),name:"Bridget Smedal",role:"Snack team lead"},
+    {id:uid(),name:"Karen Kentopp",role:"Registration / Check-in"},
+    {id:uid(),name:"Crystal Zurn",role:"Games (filling in)"}
   ];
   return {children:kids,volunteers,attendance:{}};
 }
@@ -375,8 +385,8 @@ const liveDB = {
   },
   async saveVolunteer(v){ await SB.from("volunteers").insert(v); await this.loadAll(); }
 };
-function mapChildFromDb(r){return {id:r.id,first:r.first_name,last:r.last_name,grade:r.grade,crew:r.crew,allergies:r.allergies||"",medical:r.medical_notes||"",photoConsent:r.photo_consent,guardians:r.guardians||[],emergency:r.emergency||null,consent:r.consent||null};}
-function mapChildToDb(c){return {id:c.id,first_name:c.first,last_name:c.last,grade:c.grade,crew:c.crew,allergies:c.allergies,medical_notes:c.medical,photo_consent:c.photoConsent,guardians:c.guardians,emergency:c.emergency,consent:c.consent||null};}
+function mapChildFromDb(r){return {id:r.id,first:r.first_name,last:r.last_name,grade:r.grade,crew:r.crew,allergies:r.allergies||"",medical:r.medical_notes||"",photoConsent:r.photo_consent,community:r.community||false,guardians:r.guardians||[],emergency:r.emergency||null,consent:r.consent||null};}
+function mapChildToDb(c){return {id:c.id,first_name:c.first,last_name:c.last,grade:c.grade,crew:c.crew,allergies:c.allergies,medical_notes:c.medical,photo_consent:c.photoConsent,community:c.community||false,guardians:c.guardians,emergency:c.emergency,consent:c.consent||null};}
 
 let db = demoDB;
 
@@ -386,8 +396,9 @@ let db = demoDB;
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function fullName(c){return c.first+" "+c.last;}
 function initials(c){return (c.first[0]||"")+(c.last[0]||"");}
-function gradeLabel(g){return g==="K"?"Kindergarten":"Grade "+g;}
-function gradeSort(g){return g==="K"?0:parseInt(g,10);}
+const GRADE_ORDER=["K4","K5","1","2","3","4","5"];
+function gradeLabel(g){return g==="K4"?"PreK (K4)":g==="K5"?"Kindergarten (K5)":g==="K"?"Kindergarten":"Grade "+g;}
+function gradeSort(g){const i=GRADE_ORDER.indexOf(g);return i<0?99:i;}
 function fmtTime(iso){if(!iso)return"";const d=new Date(iso);return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
 function dayName(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});}
 function dayShort(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});}
@@ -564,7 +575,8 @@ function renderCheckoutConfirm(){
     <div class="content">
       <div class="panel" style="border-left:5px solid var(--primary)">
         <h3>${esc(fullName(c))}</h3>
-        <div class="field"><div class="k">Grade / Crew</div><div class="v">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}</div></div>
+        <div class="field"><div class="k">Grade / Crew</div><div class="v">${esc(gradeLabel(c.grade))} · ${esc(c.crew)} crew</div></div>
+        ${c.community?`<div class="field"><div class="k">🔵 Community child</div><div class="v" style="color:var(--primary);font-weight:700">Sign out to an authorized guardian below</div></div>`:""}
         ${hasAlert(c)?`<div class="field"><div class="k">⚠️ Health note</div><div class="v warn">${esc([c.allergies,c.medical].filter(Boolean).join("  ·  "))}</div></div>`:""}
       </div>
       <h2 class="sect">Who is picking up?</h2>
@@ -585,8 +597,8 @@ function renderRoster(){
     return `<div class="kid" data-act="child" data-id="${c.id}">
       <div class="avatar">${esc(initials(c))}</div>
       <div class="info"><div class="nm">${esc(fullName(c))}</div>
-        <div class="meta"><span class="tag grade">${esc(c.grade==="K"?"K":"Gr "+c.grade)}</span>${esc(c.crew)}
-          ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}</div></div>
+        <div class="meta"><span class="tag grade">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)}</span>${esc(c.crew)}
+          ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}${c.community?`<span class="tag" style="background:#e4eefb;color:#2f6fb0">🔵 community</span>`:""}</div></div>
       ${stTag}<span class="chev">›</span>
     </div>`;
   }).join("") || `<div class="empty">No matches.</div>`;
@@ -612,6 +624,7 @@ function renderChild(){
       <div class="panel">
         <div class="field"><div class="k">Status today (${dayShort(state.day)})</div>
           <div class="v">${st.code==="in"?`✅ Checked in at ${fmtTime(st.rec.inAt)}`:st.code==="out"?`👋 Out at ${fmtTime(st.rec.outAt)} to ${esc(st.rec.releasedTo||"—")}`:"⏳ Not arrived"}</div></div>
+        <div class="field"><div class="k">Crew / type</div><div class="v">${esc(c.crew)} crew · ${c.community?"🔵 Community child (signed pickup required)":"CDC child"}</div></div>
         ${c.allergies?`<div class="field"><div class="k">⚠️ Allergies</div><div class="v warn">${esc(c.allergies)}</div></div>`:""}
         ${c.medical?`<div class="field"><div class="k">✚ Medical notes</div><div class="v med">${esc(c.medical)}</div></div>`:""}
         <div class="field"><div class="k">Photo / media consent</div><div class="v">${c.photoConsent?"✅ Yes":"🚫 No — do not photograph"}</div></div>
@@ -678,7 +691,7 @@ function renderEditChild(){
   const g1=(c.guardians&&c.guardians[1])||{name:"",phone:"",relationship:"Father"};
   const em=c.emergency||{name:"",phone:"",relationship:""};
   const crewOpts=CONFIG.crews.map(cr=>`<option ${c.crew===cr?"selected":""}>${esc(cr)}</option>`).join("");
-  const gradeOpts=["K","1","2","3","4","5"].map(gr=>`<option ${c.grade===gr?"selected":""}>${gr}</option>`).join("");
+  const gradeOpts=["K4","K5","1","2","3","4","5"].map(gr=>`<option ${c.grade===gr?"selected":""}>${gr}</option>`).join("");
   app.innerHTML = topbar(isNew?"Add child":"Edit child","",true,false) + `
     <div class="content form">
       <div class="two"><div><label>First name</label><input id="f_first" value="${esc(c.first)}"></div>
@@ -688,6 +701,7 @@ function renderEditChild(){
       <label>Allergies (leave blank if none)</label><input id="f_all" value="${esc(c.allergies)}" placeholder="e.g. Peanuts, Dairy">
       <label>Medical notes</label><textarea id="f_med" placeholder="Asthma, EpiPen location, care plan…">${esc(c.medical)}</textarea>
       <div class="chk"><input type="checkbox" id="f_photo" ${c.photoConsent?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">Photo / media consent given</label></div>
+      <div class="chk"><input type="checkbox" id="f_community" ${c.community?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">🔵 Community child (not CDC) — signed pickup</label></div>
 
       <h2 class="sect">Guardian 1 (authorized pickup)</h2>
       <div class="two"><div><label>Name</label><input id="g0_name" value="${esc(g0.name)}"></div>
@@ -712,11 +726,11 @@ function renderSchedule(){
   const rows=CONFIG.schedule.map(s=>{
     if(s.all) return `<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")}</div></div>`;
     const chips=CONFIG.crews.map(g=>`<span class="gchip"><span class="dot" style="background:${CONFIG.crewColors[g]||'#999'}"></span><b>${esc(g)}</b> <span class="arw">→</span> ${esc((s.assign&&s.assign[g])||"—")}</span>`).join("");
-    return `<div class="slot"><div class="t">🕐 ${esc(s.time)}</div><div class="assign">${chips}</div></div>`;
+    return `<div class="slot"><div class="t">🕐 ${esc(s.time)}${s.label?` · ${esc(s.label)}`:""}</div><div class="assign">${chips}</div></div>`;
   }).join("");
   app.innerHTML = topbar("Daily Schedule", dayName(state.day), true, true) + `
     <div class="content">
-      <div class="banner">Where each group is through the day. This is a sample rotation — send me your real schedule and colors and I'll load it.</div>
+      <div class="banner">Where each crew is through the day — 4 rotations of 20 min, plus everyone together for opening, Treetop Treats snack, and closing. Crew start-spots can be fine-tuned.</div>
       ${rows}
     </div>`;
 }
@@ -748,11 +762,7 @@ function renderCalendar(){
 
 function renderKitchen(){
   const day=state.day;
-  const snackSlots=CONFIG.schedule.filter(s=>s.assign).map(s=>{
-    const grp=CONFIG.crews.find(g=>((s.assign[g]||"").toLowerCase().includes("snack")));
-    return {time:s.time,grp};
-  }).filter(x=>x.grp);
-  const cards=snackSlots.map(({time,grp})=>{
+  const cards=CONFIG.crews.map(grp=>{
     const inGroup=DATA.children.filter(c=>c.crew===grp);
     const present=inGroup.filter(c=>statusOf(c,day).code==="in");
     const allergic=inGroup.filter(c=>c.allergies&&c.allergies.trim());
@@ -760,15 +770,17 @@ function renderKitchen(){
     const medic=inGroup.filter(c=>c.medical&&c.medical.trim());
     return `<div class="snackcard" style="border-left-color:${CONFIG.crewColors[grp]||'var(--primary)'}">
       <div class="hd"><span style="width:16px;height:16px;border-radius:50%;background:${CONFIG.crewColors[grp]||'#999'};display:inline-block"></span>
-        <span class="grp">${esc(grp)}</span><span class="cnt">🕐 ${esc(time)}<br>${present.length} here / ${inGroup.length} total</span></div>
-      ${allergic.length?`<div class="al">⚠️ ${allergic.length} allergy alert${allergic.length>1?'s':''}:<br>${alList}</div>`:`<div class="ok">✅ No allergies in this group</div>`}
+        <span class="grp">${esc(grp)} crew</span><span class="cnt">${present.length} here / ${inGroup.length} total</span></div>
+      ${allergic.length?`<div class="al">⚠️ ${allergic.length} allergy alert${allergic.length>1?'s':''}:<br>${alList}</div>`:`<div class="ok">✅ No allergies in this crew</div>`}
       ${medic.length?`<div class="al" style="background:var(--amber-bg);color:var(--amber)">✚ Medical: ${medic.map(c=>esc(fullName(c))+" ("+esc(c.medical)+")").join("; ")}</div>`:``}
     </div>`;
   }).join("");
+  const totalPresent=DATA.children.filter(c=>statusOf(c,day).code==="in").length;
+  const totalAllergic=DATA.children.filter(c=>statusOf(c,day).code==="in"&&c.allergies&&c.allergies.trim()).length;
   app.innerHTML = topbar("Snack Team", dayName(state.day), true, true) + `
     <div class="content">
-      <div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Groups in the order they arrive at snack, each with its allergy alerts. “Here” = kids from that group already checked in.</div>
-      ${cards || '<div class="empty">No snack rotation set yet.</div>'}
+      <div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">🍎 Treetop Treats — 10:04–10:24, all crews together. <b>${totalPresent}</b> kids here, <b>${totalAllergic}</b> with allergies. Counts + allergies by crew below. “Here” = checked in today.</div>
+      ${cards}
     </div>`;
 }
 
@@ -974,6 +986,7 @@ app.addEventListener("click",async e=>{
         first:gv("f_first"),last:gv("f_last"),grade:gv("f_grade"),crew:gv("f_crew"),
         allergies:gv("f_all"),medical:document.getElementById("f_med").value.trim(),
         photoConsent:document.getElementById("f_photo").checked,
+        community:document.getElementById("f_community").checked,
         guardians,
         emergency: gv("e_name")?{name:gv("e_name"),phone:gv("e_phone"),relationship:""}:null
       };

@@ -13,6 +13,7 @@ create table if not exists public.children (
   allergies     text default '',
   medical_notes text default '',
   photo_consent boolean default true,
+  community     boolean default false, -- community kid (not CDC) — needs signed pickup + wristband
   guardians     jsonb default '[]',   -- [{name,phone,relationship,canPickup}]
   emergency     jsonb,                -- {name,phone,relationship}
   consent       jsonb,                -- {name, signature(dataURL), signedAt} e-signature

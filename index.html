@@ -245,13 +245,15 @@ function buildRealSchedule(groups, stations){
 CONFIG.schedule = buildRealSchedule(CONFIG.crews, CONFIG.stations);
 
 /* ---------- in-memory cache the UI renders from ---------- */
-const DATA = { children:[], volunteers:[], attendance:{} };
+const DATA = { children:[], volunteers:[], attendance:{}, activity:[] };
 let state = {
   view:"home", day:defaultDay(), search:"",
   currentVolunteer: localStorage.getItem("vbs_vol") || "",
-  selChild:null, selGuardian:null, editChild:null
+  selChild:null, selGuardian:null, editChild:null, currentUser:null
 };
 let authed = false;
+// Who is acting: the signed-in account (live) wins; falls back to the on-duty helper.
+function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
 
 function defaultDay(){
   const today = new Date().toISOString().slice(0,10);
@@ -263,7 +265,7 @@ function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toSt
 /* ============================================================
    DATA LAYER  (demo <-> supabase share one interface)
    ============================================================ */
-const DEMO_KEY = "vbs_demo_v4";
+const DEMO_KEY = "vbs_demo_v5";
 
 function seedDemo(){
   const g=(name,phone,rel,pick=true)=>({name,phone,relationship:rel,canPickup:pick});
@@ -307,7 +309,13 @@ function seedDemo(){
     {id:uid(),name:"Karen Kentopp",role:"Registration / Check-in"},
     {id:uid(),name:"Crystal Zurn",role:"Games (filling in)"}
   ];
-  return {children:kids,volunteers,attendance:{}};
+  const now=new Date(), ago=m=>new Date(now.getTime()-m*60000).toISOString();
+  const activity=[
+    {at:ago(3),  user:"Karen Kentopp", action:"Checked in Emma Bauer (Blue crew)"},
+    {at:ago(8),  user:"Karen Kentopp", action:"Signed in"},
+    {at:ago(40), user:"Todd Klumb",    action:"Edited child details: Olivia Meyer"}
+  ];
+  return {children:kids,volunteers,attendance:{},activity};
 }
 function demoStore(){
   let raw=localStorage.getItem(DEMO_KEY);
@@ -321,6 +329,12 @@ const demoDB = {
     const s=demoStore();
     DATA.children=s.children; DATA.volunteers=s.volunteers;
     DATA.attendance=s.attendance||{};
+    DATA.activity=s.activity||[];
+  },
+  async logActivity(entry){
+    const s=demoStore(); s.activity=s.activity||[]; s.activity.unshift(entry);
+    if(s.activity.length>500) s.activity.length=500;
+    demoSave(s); DATA.activity=s.activity;
   },
   async checkIn(childId,day,by){
     const s=demoStore(); s.attendance[day]=s.attendance[day]||{};
@@ -365,6 +379,12 @@ const liveDB = {
       DATA.attendance[r.event_date]=DATA.attendance[r.event_date]||{};
       DATA.attendance[r.event_date][r.child_id]={inAt:r.checked_in_at,inBy:r.checked_in_by,outAt:r.checked_out_at,outBy:r.checked_out_by,releasedTo:r.released_to};
     });
+    const {data:log}=await SB.from("activity_log").select("*").order("at",{ascending:false}).limit(200);
+    DATA.activity=(log||[]).map(r=>({at:r.at,user:r.user_email,action:r.action}));
+  },
+  async logActivity(entry){
+    await SB.from("activity_log").insert({user_email:entry.user,action:entry.action,at:entry.at||nowISO()});
+    DATA.activity.unshift(entry);
   },
   async checkIn(childId,day,by){
     await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_in_at:nowISO(),checked_in_by:by,checked_out_at:null,checked_out_by:null,released_to:null},{onConflict:"child_id,event_date"});
@@ -470,6 +490,7 @@ function render(){
   if(v==="schedule") return renderSchedule();
   if(v==="kitchen") return renderKitchen();
   if(v==="calendar") return renderCalendar();
+  if(v==="activity") return renderActivity();
   if(v==="consent") return renderConsent();
   if(v==="volunteers") return renderVolunteers();
   if(v==="pickday") return renderPickDay();
@@ -852,14 +873,30 @@ async function doLogin(){
   const email=(emailEl&&emailEl.value||"").trim(), pass=(passEl&&passEl.value)||"";
   if(!email||!pass){ renderLogin("Enter your email and password."); return; }
   try{
-    const {error}=await SB.auth.signInWithPassword({email,password:pass});
+    const {data:sd,error}=await SB.auth.signInWithPassword({email,password:pass});
     if(error){ renderLogin(error.message||"Sign-in failed."); return; }
-    authed=true; await db.loadAll(); go("home");
+    authed=true; state.currentUser=(sd&&sd.user&&sd.user.email)||email;
+    await db.loadAll();
+    try{ await db.logActivity({at:nowISO(),user:state.currentUser,action:"Signed in"}); }catch(e){}
+    go("home");
   }catch(err){ renderLogin("Sign-in failed. Check the wifi connection and try again."); }
 }
 async function doLogout(){
   try{ await SB.auth.signOut(); }catch(e){}
   authed=false; renderLogin();
+}
+
+function renderActivity(){
+  const rows=(DATA.activity||[]).slice(0,200).map(e=>`
+    <div class="slot" style="padding:11px 14px;margin-bottom:8px">
+      <div style="font-weight:600;font-size:15px">${esc(e.action)}</div>
+      <div class="lbl">👤 ${esc(e.user||"—")} · ${new Date(e.at).toLocaleString()}</div>
+    </div>`).join("") || '<div class="empty">No activity yet. Every check-in, check-out, and edit will show here.</div>';
+  app.innerHTML = topbar("Activity Log","Who did what, and when",true,false) + `
+    <div class="content">
+      <div class="banner">Every check-in, check-out, edit, and sign-in is recorded here with the volunteer's name and the time. ${LIVE?"":"(Demo — the real name comes from each volunteer's own login once we're live.)"}</div>
+      ${rows}
+    </div>`;
 }
 
 function renderInfo(){
@@ -883,6 +920,7 @@ function renderInfo(){
         <h3>After the event</h3>
         <p>Children's info is deleted once VBS wraps and follow-up is done. Ask Chief to run the purge.</p>
       </div>
+      <button class="btn ghost no-print" data-act="activity">🧾 View activity log (who did what)</button>
       ${LIVE?"":`<button class="btn red no-print" data-act="resetDemo">🔄 Reset demo data</button>`}
       ${LIVE?`<button class="btn ghost no-print" data-act="signout">Sign out</button>`:``}
       <div class="brandfoot"><img src="assets/church-logo.png" alt="${esc(CONFIG.church)}"><div class="tag">${esc(CONFIG.tagline)}</div></div>
@@ -941,6 +979,7 @@ app.addEventListener("click",async e=>{
     case "schedule": go("schedule"); break;
     case "kitchen": go("kitchen"); break;
     case "calendar": go("calendar"); break;
+    case "activity": go("activity"); break;
     case "consent": go("consent",{selChild:id||state.selChild}); break;
     case "clearSig": if(sigPad) sigPad.clear(); break;
     case "saveConsent": {
@@ -948,7 +987,9 @@ app.addEventListener("click",async e=>{
       if(!sigPad||!sigPad.isDirty()){ toast("Please sign in the box first"); break; }
       const c=DATA.children.find(x=>x.id===state.selChild); if(!c) break;
       c.consent={name:nm.trim(),signature:sigPad.dataUrl(),signedAt:nowISO()};
-      await db.saveChild(c); go("child",{selChild:c.id}); toast("✍️ Consent saved for "+fullName(c));
+      await db.saveChild(c);
+      await db.logActivity({at:nowISO(),user:actor(),action:"Consent signed for "+fullName(c)+" by "+(nm.trim()||"guardian")});
+      go("child",{selChild:c.id}); toast("✍️ Consent saved for "+fullName(c));
       break;
     }
     case "volunteers": go("volunteers"); break;
@@ -961,7 +1002,8 @@ app.addEventListener("click",async e=>{
 
     case "doCheckin": {
       const c=DATA.children.find(x=>x.id===id);
-      await db.checkIn(id,state.day,state.currentVolunteer);
+      await db.checkIn(id,state.day,actor());
+      await db.logActivity({at:nowISO(),user:actor(),action:"Checked in "+fullName(c)+" ("+c.crew+" crew)"});
       render();
       toast("✅ "+fullName(c)+" checked in", async()=>{await db.undoCheckIn(id,state.day);render();});
       break;
@@ -971,7 +1013,8 @@ app.addEventListener("click",async e=>{
     case "confirmCheckout": {
       const c=DATA.children.find(x=>x.id===state.selChild);
       const g=(c.guardians||[]).filter(x=>x.canPickup!==false)[state.selGuardian];
-      await db.checkOut(c.id,state.day,g?g.name:"",state.currentVolunteer);
+      await db.checkOut(c.id,state.day,g?g.name:"",actor());
+      await db.logActivity({at:nowISO(),user:actor(),action:"Checked out "+fullName(c)+" to "+(g?g.name:"guardian")});
       go("checkout");
       toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian"));
       break;
@@ -991,7 +1034,10 @@ app.addEventListener("click",async e=>{
         emergency: gv("e_name")?{name:gv("e_name"),phone:gv("e_phone"),relationship:""}:null
       };
       if(!child.first||!child.last){toast("Please enter first and last name");break;}
-      await db.saveChild(child); go("roster"); toast("Saved "+fullName(child));
+      const isNewChild=!(state.editChild&&state.editChild.id);
+      await db.saveChild(child);
+      await db.logActivity({at:nowISO(),user:actor(),action:(isNewChild?"Added":"Edited")+" child: "+fullName(child)});
+      go("roster"); toast("Saved "+fullName(child));
       break;
     }
     case "saveVol": {
@@ -1013,6 +1059,7 @@ function prevView(){
   if(v==="child") return "roster";
   if(v==="editChild") return state.editChild?"child":"roster";
   if(v==="consent") return "child";
+  if(v==="activity") return "info";
   if(v==="checkoutConfirm") return "checkout";
   if(["checkin","checkout","roster","allergies","schedule","kitchen","calendar","volunteers","info","pickday"].includes(v)) return "home";
   return "home";
@@ -1033,7 +1080,7 @@ function prevView(){
       SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; });
       const {data}=await SB.auth.getSession();
       if(!(data&&data.session)){ renderLogin(); return; }   // must sign in first
-      authed=true;
+      authed=true; state.currentUser=data.session.user.email;
     }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }
   }
   await db.loadAll();

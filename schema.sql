@@ -28,6 +28,15 @@ create table if not exists public.volunteers (
   phone text default ''
 );
 
+-- Append-only audit trail: who did what, and when (check-ins, check-outs, edits, sign-ins)
+create table if not exists public.activity_log (
+  id         bigint generated always as identity primary key,
+  user_email text,
+  action     text not null,
+  child_id   text,
+  at         timestamptz default now()
+);
+
 -- One row per child per event day
 create table if not exists public.attendance (
   child_id       text not null references public.children(id) on delete cascade,
@@ -44,9 +53,10 @@ create table if not exists public.attendance (
 -- Row Level Security: only signed-in admin-team accounts can
 -- read or write. The public anon key alone can see nothing.
 -- ============================================================
-alter table public.children   enable row level security;
-alter table public.volunteers enable row level security;
-alter table public.attendance enable row level security;
+alter table public.children     enable row level security;
+alter table public.volunteers   enable row level security;
+alter table public.attendance   enable row level security;
+alter table public.activity_log enable row level security;
 
 create policy "team reads children"  on public.children   for select to authenticated using (true);
 create policy "team writes children" on public.children   for all    to authenticated using (true) with check (true);
@@ -54,10 +64,14 @@ create policy "team reads vols"      on public.volunteers for select to authenti
 create policy "team writes vols"     on public.volunteers for all    to authenticated using (true) with check (true);
 create policy "team reads att"       on public.attendance for select to authenticated using (true);
 create policy "team writes att"      on public.attendance for all    to authenticated using (true) with check (true);
+-- Audit log: signed-in team can read + append, but NOT edit/delete (keeps the trail honest)
+create policy "team reads log"       on public.activity_log for select to authenticated using (true);
+create policy "team appends log"     on public.activity_log for insert to authenticated with check (true);
 
 -- ============================================================
 -- AFTER THE EVENT — data purge (run when follow-up is done):
 --   truncate table public.attendance;
+--   truncate table public.activity_log;
 --   delete from public.children;
 -- Keeps volunteers if you want them for next year; otherwise:
 --   delete from public.volunteers;

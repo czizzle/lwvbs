@@ -198,24 +198,33 @@ const CONFIG = {
   tagline:   "Exploring the Nature of God",
   church:    "Living Word Lutheran Church",
   dates:     ["2026-08-03","2026-08-04","2026-08-05","2026-08-06"],
-  crews:     ["Lions","Eagles","Bears","Doves"],
-  crewColors:{Lions:"#c99a2e",Eagles:"#2f6fb0",Bears:"#8a5a2b",Doves:"#5b8f7a"},
-  stations: ["Bible Adventure","Games & Rec","Crafts","Snack Shack"],
-  // Sample rotation — groups (colors) move through stations. Replace with the real schedule.
-  schedule: [
-    {time:"9:00",  all:true, label:"Opening — all groups together"},
-    {time:"9:25",  assign:{Lions:"Bible Adventure",Eagles:"Games & Rec",Bears:"Crafts",Doves:"Snack Shack"}},
-    {time:"9:55",  assign:{Lions:"Games & Rec",Eagles:"Crafts",Bears:"Snack Shack",Doves:"Bible Adventure"}},
-    {time:"10:25", assign:{Lions:"Crafts",Eagles:"Snack Shack",Bears:"Bible Adventure",Doves:"Games & Rec"}},
-    {time:"10:55", assign:{Lions:"Snack Shack",Eagles:"Bible Adventure",Bears:"Games & Rec",Doves:"Crafts"}},
-    {time:"11:25", all:true, label:"Closing — all groups together"}
-  ],
+  // 8 groups, named by color (Living Word's real groups). Yellow + Teal are placeholders for the last two — confirm.
+  crews:     ["Blue","Green","Purple","Orange","Red","Pink","Yellow","Teal"],
+  crewColors:{Blue:"#2f6fb0",Green:"#3d8b40",Purple:"#7e3ea8",Orange:"#e07b2e",Red:"#c0392b",Pink:"#d6417f",Yellow:"#e0a72e",Teal:"#0f9aa6"},
+  stations: ["Sing & Play","Bible Adventure","Imagination Station","Games","Crafts","Snack","Story Theater","Mission Project"],
+  // Sample rotation — auto-built from groups × stations (see buildSampleSchedule). Replaced when the real schedule is loaded.
+  schedule: [],
   // --- paste these two to go live; leave blank for demo mode ---
   supabaseUrl:     "",
   supabaseAnonKey: ""
 };
 const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
+
+// Build a sample rotation for any set of groups/stations (placeholder until the real schedule is loaded)
+function buildSampleSchedule(groups, stations){
+  const slots = [{time:"9:00", all:true, label:"Opening — all groups together"}];
+  const n = stations.length;
+  const times = ["9:15","9:35","9:55","10:15","10:35","10:55","11:15","11:30"];
+  for(let s=0; s<n; s++){
+    const assign = {};
+    groups.forEach((grp,i)=>{ assign[grp] = stations[(i+s)%n]; });
+    slots.push({time: times[s] || (s+1)+"", assign});
+  }
+  slots.push({time:"11:45", all:true, label:"Closing — all groups together"});
+  return slots;
+}
+CONFIG.schedule = buildSampleSchedule(CONFIG.crews, CONFIG.stations);
 
 /* ---------- in-memory cache the UI renders from ---------- */
 const DATA = { children:[], volunteers:[], attendance:{} };
@@ -236,47 +245,46 @@ function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toSt
 /* ============================================================
    DATA LAYER  (demo <-> supabase share one interface)
    ============================================================ */
-const DEMO_KEY = "vbs_demo_v2";
+const DEMO_KEY = "vbs_demo_v3";
 
 function seedDemo(){
   const g=(name,phone,rel,pick=true)=>({name,phone,relationship:rel,canPickup:pick});
   const kids=[
-    {first:"Emma",last:"Bauer",grade:"K",crew:"Lions",allergies:"Peanuts (severe)",medical:"",photoConsent:true,
+    {first:"Emma",last:"Bauer",grade:"K",crew:"Blue",allergies:"Peanuts (severe)",medical:"",photoConsent:true,
       guardians:[g("Sarah Bauer","262-555-0111","Mother"),g("Tom Bauer","262-555-0112","Father")],
       emergency:g("Linda Voss","262-555-0199","Grandmother")},
-    {first:"Liam",last:"Schmidt",grade:"2",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+    {first:"Liam",last:"Schmidt",grade:"2",crew:"Green",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Karen Schmidt","262-555-0121","Mother")],emergency:g("Paul Schmidt","262-555-0122","Uncle")},
-    {first:"Olivia",last:"Meyer",grade:"4",crew:"Bears",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
+    {first:"Olivia",last:"Meyer",grade:"4",crew:"Purple",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
       guardians:[g("Ruth Meyer","262-555-0131","Mother"),g("Dan Meyer","262-555-0132","Father")],emergency:g("Ruth Meyer","262-555-0131","Mother")},
-    {first:"Noah",last:"Wagner",grade:"1",crew:"Doves",allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
+    {first:"Noah",last:"Wagner",grade:"1",crew:"Orange",allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
       guardians:[g("Amy Wagner","262-555-0141","Mother")],emergency:g("Greg Wagner","262-555-0142","Father")},
-    {first:"Ava",last:"Fischer",grade:"3",crew:"Lions",allergies:"",medical:"",photoConsent:true,
+    {first:"Ava",last:"Fischer",grade:"3",crew:"Red",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Beth Fischer","262-555-0151","Mother"),g("Mark Fischer","262-555-0152","Father")],emergency:g("Beth Fischer","262-555-0151","Mother")},
-    {first:"Mason",last:"Weber",grade:"5",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+    {first:"Mason",last:"Weber",grade:"5",crew:"Pink",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Julie Weber","262-555-0161","Mother")],emergency:g("Steve Weber","262-555-0162","Father")},
-    {first:"Sophia",last:"Becker",grade:"K",crew:"Bears",allergies:"Dairy",medical:"",photoConsent:false,
+    {first:"Sophia",last:"Becker",grade:"K",crew:"Yellow",allergies:"Dairy",medical:"",photoConsent:false,
       guardians:[g("Nina Becker","262-555-0171","Mother"),g("Grandma Rose","262-555-0173","Grandmother")],emergency:g("Nina Becker","262-555-0171","Mother")},
-    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Doves",allergies:"",medical:"",photoConsent:true,
+    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Teal",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Kate Hoffmann","262-555-0181","Mother")],emergency:g("Joe Hoffmann","262-555-0182","Father")},
-    {first:"Mia",last:"Keller",grade:"3",crew:"Lions",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
+    {first:"Mia",last:"Keller",grade:"3",crew:"Blue",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
       guardians:[g("Dana Keller","262-555-0191","Mother"),g("Rob Keller","262-555-0192","Father")],emergency:g("Dana Keller","262-555-0191","Mother")},
-    {first:"Ethan",last:"Braun",grade:"4",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+    {first:"Ethan",last:"Braun",grade:"4",crew:"Green",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Lisa Braun","262-555-0201","Mother")],emergency:g("Tim Braun","262-555-0202","Father")},
-    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Bears",allergies:"",medical:"",photoConsent:true,
+    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Purple",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Anne Vogel","262-555-0211","Mother"),g("Chris Vogel","262-555-0212","Father")],emergency:g("Anne Vogel","262-555-0211","Mother")},
-    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Doves",allergies:"",medical:"",photoConsent:false,
+    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Orange",allergies:"",medical:"",photoConsent:false,
       guardians:[g("Meg Zimmerman","262-555-0221","Mother")],emergency:g("Dave Zimmerman","262-555-0222","Father")},
-    {first:"Amelia",last:"Krause",grade:"K",crew:"Lions",allergies:"",medical:"",photoConsent:true,
+    {first:"Amelia",last:"Krause",grade:"K",crew:"Red",allergies:"",medical:"",photoConsent:true,
       guardians:[g("Sara Krause","262-555-0231","Mother"),g("Grandpa Bill","262-555-0233","Grandfather")],emergency:g("Sara Krause","262-555-0231","Mother")},
-    {first:"Jack",last:"Schulz",grade:"2",crew:"Eagles",allergies:"Gluten (celiac)",medical:"",photoConsent:true,
+    {first:"Jack",last:"Schulz",grade:"2",crew:"Pink",allergies:"Gluten (celiac)",medical:"",photoConsent:true,
       guardians:[g("Erin Schulz","262-555-0241","Mother")],emergency:g("Nate Schulz","262-555-0242","Father")}
   ].map(k=>({id:uid(),...k}));
   const volunteers=[
-    {id:uid(),name:"Barb Nelson",role:"Check-in lead"},
-    {id:uid(),name:"Judy Krueger",role:"Crew leader"},
-    {id:uid(),name:"Pastor Dave",role:"Director"},
-    {id:uid(),name:"Karen Weiss",role:"Snack team"},
-    {id:uid(),name:"Ruth Meyer",role:"Crew leader"}
+    {id:uid(),name:"Todd Klumb",role:"VBS Director / Lead"},
+    {id:uid(),name:"Pastor Davis",role:"Pastor"},
+    {id:uid(),name:"Bridget Smedel",role:"Snack team"},
+    {id:uid(),name:"Karen Kentopp",role:"Registration / Check-in"}
   ];
   return {children:kids,volunteers,attendance:{}};
 }

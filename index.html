@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#236c31">
+<title>Living Word VBS Check-In</title>
+<style>
+  :root{
+    --bg:#f4f1e6; --card:#ffffff; --ink:#20301c; --muted:#5f6b58;
+    --line:#e6dfcc; --primary:#2e8b40; --primary-d:#236c31;
+    --teal:#0f9aa6; --gold:#c78f1e; --navy:#1a344e;
+    --green:#15803d; --green-bg:#e7f6ec; --amber:#b4780a; --amber-bg:#fdf2df;
+    --red:#c62828; --red-bg:#fdeaea; --slate:#4b5546; --slate-bg:#eef1ea;
+    --shadow:0 2px 10px rgba(30,45,20,.09);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); font-size:18px; line-height:1.4;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  #app{max-width:560px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+
+  /* Top bar */
+  .topbar{position:sticky;top:0;z-index:20;color:#fff;
+    background:linear-gradient(135deg,#2f8f40 0%,#1f7a4a 52%,#0f9aa6 100%);
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;box-shadow:0 2px 12px rgba(20,60,30,.22)}
+  .topbar .row{display:flex;align-items:center;gap:12px}
+  .topbar h1{font-size:17px;margin:0;font-weight:800;flex:1;line-height:1.2}
+  .topbar .sub{font-size:12.5px;opacity:.92;margin-top:2px}
+  .topmark{width:42px;height:42px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+  /* Home brand footer */
+  .brandfoot{text-align:center;margin:26px 0 6px}
+  .brandfoot img{width:210px;max-width:70%;opacity:.92}
+  .brandfoot .tag{color:var(--gold);font-weight:700;font-size:13.5px;margin-top:6px}
+  .backbtn{background:rgba(255,255,255,.18);border:0;color:#fff;font-size:22px;
+    width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+  .daybadge{background:rgba(255,255,255,.18);border-radius:10px;padding:6px 10px;font-size:13px;font-weight:600}
+
+  .content{flex:1;padding:16px}
+  h2.sect{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:22px 4px 10px}
+
+  /* Helper pill */
+  .helper{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:10px 12px;box-shadow:var(--shadow);margin-bottom:14px}
+  .helper label{font-size:13px;color:var(--muted);white-space:nowrap}
+  .helper select{flex:1;font-size:17px;border:0;background:transparent;color:var(--ink);font-weight:600;padding:6px 2px}
+
+  /* Stat grid */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+  .stat .n{font-size:34px;font-weight:800;line-height:1}
+  .stat .l{font-size:13px;color:var(--muted);margin-top:6px;font-weight:600}
+  .stat.green .n{color:var(--green)} .stat.slate .n{color:var(--slate)}
+  .stat.amber .n{color:var(--amber)} .stat.primary .n{color:var(--primary)}
+
+  .alertbar{margin-top:12px;background:var(--red-bg);border:1px solid #f3c9c9;color:var(--red);
+    border-radius:14px;padding:12px 14px;font-weight:600;font-size:15px;display:flex;gap:8px;align-items:center}
+
+  /* Big action buttons */
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  .act{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px 14px;text-align:center;box-shadow:var(--shadow);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:8px;font-weight:700;font-size:16px}
+  .act .ico{font-size:30px}
+  .act:active{transform:scale(.98)}
+  .act.wide{grid-column:1 / -1;flex-direction:row;justify-content:center;gap:12px;font-size:16px}
+  .act.checkin{background:var(--green-bg);border-color:#c3e6cf}
+  .act.checkout{background:#e7f0f6;border-color:#c9dcea}
+
+  /* Crew rows */
+  .crewline{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:10px 14px;margin-bottom:8px}
+  .crewline .name{flex:1;font-weight:600}
+  .crewline .cnt{color:var(--muted);font-size:14px}
+  .dot{width:12px;height:12px;border-radius:50%}
+
+  /* Search */
+  .search{width:100%;font-size:18px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;
+    background:var(--card);box-shadow:var(--shadow);margin-bottom:12px}
+
+  /* Child rows */
+  .list{display:flex;flex-direction:column;gap:10px}
+  .kid{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:14px;box-shadow:var(--shadow);cursor:pointer;min-height:64px}
+  .kid:active{transform:scale(.995)}
+  .avatar{width:46px;height:46px;border-radius:50%;background:var(--slate-bg);color:var(--slate);
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;flex-shrink:0}
+  .kid .info{flex:1;min-width:0}
+  .kid .nm{font-weight:700;font-size:18px}
+  .kid .meta{font-size:13px;color:var(--muted);margin-top:2px}
+  .tag{display:inline-block;font-size:12px;font-weight:700;padding:3px 8px;border-radius:20px;margin-right:5px}
+  .tag.grade{background:var(--slate-bg);color:var(--slate)}
+  .tag.allergy{background:var(--red-bg);color:var(--red)}
+  .tag.med{background:var(--amber-bg);color:var(--amber)}
+  .status{font-size:13px;font-weight:800;padding:6px 12px;border-radius:20px;white-space:nowrap}
+  .status.in{background:var(--green-bg);color:var(--green)}
+  .status.out{background:var(--slate-bg);color:var(--slate)}
+  .status.notin{background:#eef2f6;color:var(--muted)}
+  .chev{color:#c4ccd4;font-size:22px}
+
+  .empty{text-align:center;color:var(--muted);padding:40px 20px;font-size:16px}
+
+  /* Detail / confirm */
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
+  .panel h3{margin:0 0 4px;font-size:20px}
+  .field{padding:10px 0;border-bottom:1px solid var(--line)}
+  .field:last-child{border-bottom:0}
+  .field .k{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+  .field .v{font-size:17px;margin-top:2px}
+  .field .v.warn{color:var(--red);font-weight:600}
+  .field .v.med{color:var(--amber);font-weight:600}
+
+  .btn{display:block;width:100%;font-size:18px;font-weight:700;padding:16px;border-radius:14px;border:0;
+    cursor:pointer;text-align:center;margin-top:10px}
+  .btn.green{background:var(--green);color:#fff}
+  .btn.blue{background:var(--primary);color:#fff}
+  .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  .btn.red{background:var(--red);color:#fff}
+  .btn:active{opacity:.92}
+
+  .pick{display:block;width:100%;text-align:left;background:var(--card);border:2px solid var(--line);
+    border-radius:14px;padding:16px;margin-bottom:10px;font-size:17px;cursor:pointer}
+  .pick.sel{border-color:var(--primary);background:#eef7fa}
+  .pick .r{font-size:13px;color:var(--muted)}
+  .pick .ph{font-size:14px;color:var(--primary);font-weight:600;margin-top:3px}
+
+  /* Toast */
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1c2530;color:#fff;
+    padding:14px 18px;border-radius:14px;font-size:16px;font-weight:600;display:flex;align-items:center;gap:14px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);z-index:60;max-width:90%;opacity:0;pointer-events:none;transition:opacity .2s}
+  #toast.show{opacity:1;pointer-events:auto}
+  #toast button{background:#3ea0b5;border:0;color:#fff;font-weight:800;padding:8px 12px;border-radius:10px;font-size:15px}
+
+  /* Form */
+  .form label{display:block;font-size:13px;color:var(--muted);font-weight:700;margin:12px 2px 5px;text-transform:uppercase;letter-spacing:.03em}
+  .form input,.form select,.form textarea{width:100%;font-size:17px;padding:13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+  .form textarea{min-height:70px;resize:vertical}
+  .form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .chk{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:16px}
+  .chk input{width:22px;height:22px}
+
+  .banner{background:#fff7e6;border:1px solid #f0d9a8;color:#8a5a00;border-radius:12px;padding:10px 14px;font-size:13.5px;margin-bottom:14px;font-weight:600}
+
+  /* Schedule + snack */
+  .slot{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow)}
+  .slot .t{font-weight:800;font-size:17px}
+  .slot.all{background:#eef7fa;border-color:#c9e4ec}
+  .slot .lbl{color:var(--muted);font-size:14px;margin-top:2px}
+  .assign{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+  .gchip{display:flex;align-items:center;gap:9px;background:#f4f6f8;border-radius:10px;padding:9px 11px;font-size:15px}
+  .gchip .dot{width:13px;height:13px;border-radius:50%;flex-shrink:0}
+  .gchip .arw{color:var(--muted)}
+  .snackcard{background:var(--card);border:1px solid var(--line);border-left:7px solid var(--primary);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow)}
+  .snackcard .hd{display:flex;align-items:center;gap:10px}
+  .snackcard .grp{font-weight:800;font-size:19px;flex:1}
+  .snackcard .cnt{font-size:13.5px;color:var(--muted);text-align:right}
+  .snackcard .al{margin-top:10px;background:var(--red-bg);border-radius:10px;padding:9px 11px;font-size:14.5px;color:var(--red);line-height:1.5;font-weight:600}
+  .snackcard .ok{margin-top:10px;color:var(--green);font-size:14.5px;font-weight:700}
+  #sigpad{width:100%;height:190px;border:2px dashed var(--line);border-radius:12px;background:#fff;touch-action:none;display:block}
+
+  /* Login */
+  .login-wrap{min-height:64vh;display:flex;flex-direction:column;justify-content:center;padding:8px}
+  .login-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:26px 22px;box-shadow:var(--shadow)}
+  .login-card h2{margin:0 0 4px;font-size:22px;text-align:center}
+  .login-card p{color:var(--muted);margin:0 0 18px;font-size:15px;text-align:center}
+  .login-err{background:var(--red-bg);color:var(--red);border:1px solid #f3c9c9;border-radius:12px;padding:10px 12px;font-size:14px;font-weight:600;margin-bottom:12px}
+  .login-logo{width:64px;height:64px;border-radius:18px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 16px}
+  .info p{font-size:15px;color:var(--slate);margin:10px 0}
+  .info code{background:#eef2f6;padding:2px 6px;border-radius:6px;font-size:14px}
+  a.link{color:var(--primary);font-weight:600;text-decoration:none}
+
+  @media print{
+    .topbar,.helper,.actions,.search,.no-print{display:none!important}
+    body{background:#fff;font-size:12px}
+    #app{max-width:none}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   Living Word Lutheran VBS — Check-In App
+   Single-file. Demo mode works offline with no accounts.
+   To go LIVE (real multi-phone sync), paste your Supabase
+   URL + anon key in CONFIG below and run schema.sql once.
+   ============================================================ */
+
+const CONFIG = {
+  eventName: "Rainforest Falls VBS",
+  location:  "Living Word Lutheran · Jackson, WI",
+  tagline:   "Exploring the Nature of God",
+  church:    "Living Word Lutheran Church",
+  dates:     ["2026-08-03","2026-08-04","2026-08-05","2026-08-06"],
+  crews:     ["Lions","Eagles","Bears","Doves"],
+  crewColors:{Lions:"#c99a2e",Eagles:"#2f6fb0",Bears:"#8a5a2b",Doves:"#5b8f7a"},
+  stations: ["Bible Adventure","Games & Rec","Crafts","Snack Shack"],
+  // Sample rotation — groups (colors) move through stations. Replace with the real schedule.
+  schedule: [
+    {time:"9:00",  all:true, label:"Opening — all groups together"},
+    {time:"9:25",  assign:{Lions:"Bible Adventure",Eagles:"Games & Rec",Bears:"Crafts",Doves:"Snack Shack"}},
+    {time:"9:55",  assign:{Lions:"Games & Rec",Eagles:"Crafts",Bears:"Snack Shack",Doves:"Bible Adventure"}},
+    {time:"10:25", assign:{Lions:"Crafts",Eagles:"Snack Shack",Bears:"Bible Adventure",Doves:"Games & Rec"}},
+    {time:"10:55", assign:{Lions:"Snack Shack",Eagles:"Bible Adventure",Bears:"Games & Rec",Doves:"Crafts"}},
+    {time:"11:25", all:true, label:"Closing — all groups together"}
+  ],
+  // --- paste these two to go live; leave blank for demo mode ---
+  supabaseUrl:     "",
+  supabaseAnonKey: ""
+};
+const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
+const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
+
+/* ---------- in-memory cache the UI renders from ---------- */
+const DATA = { children:[], volunteers:[], attendance:{} };
+let state = {
+  view:"home", day:defaultDay(), search:"",
+  currentVolunteer: localStorage.getItem("vbs_vol") || "",
+  selChild:null, selGuardian:null, editChild:null
+};
+let authed = false;
+
+function defaultDay(){
+  const today = new Date().toISOString().slice(0,10);
+  return CONFIG.dates.includes(today) ? today : CONFIG.dates[0];
+}
+function nowISO(){ return new Date().toISOString(); }
+function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4); }
+
+/* ============================================================
+   DATA LAYER  (demo <-> supabase share one interface)
+   ============================================================ */
+const DEMO_KEY = "vbs_demo_v2";
+
+function seedDemo(){
+  const g=(name,phone,rel,pick=true)=>({name,phone,relationship:rel,canPickup:pick});
+  const kids=[
+    {first:"Emma",last:"Bauer",grade:"K",crew:"Lions",allergies:"Peanuts (severe)",medical:"",photoConsent:true,
+      guardians:[g("Sarah Bauer","262-555-0111","Mother"),g("Tom Bauer","262-555-0112","Father")],
+      emergency:g("Linda Voss","262-555-0199","Grandmother")},
+    {first:"Liam",last:"Schmidt",grade:"2",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Karen Schmidt","262-555-0121","Mother")],emergency:g("Paul Schmidt","262-555-0122","Uncle")},
+    {first:"Olivia",last:"Meyer",grade:"4",crew:"Bears",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
+      guardians:[g("Ruth Meyer","262-555-0131","Mother"),g("Dan Meyer","262-555-0132","Father")],emergency:g("Ruth Meyer","262-555-0131","Mother")},
+    {first:"Noah",last:"Wagner",grade:"1",crew:"Doves",allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
+      guardians:[g("Amy Wagner","262-555-0141","Mother")],emergency:g("Greg Wagner","262-555-0142","Father")},
+    {first:"Ava",last:"Fischer",grade:"3",crew:"Lions",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Beth Fischer","262-555-0151","Mother"),g("Mark Fischer","262-555-0152","Father")],emergency:g("Beth Fischer","262-555-0151","Mother")},
+    {first:"Mason",last:"Weber",grade:"5",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Julie Weber","262-555-0161","Mother")],emergency:g("Steve Weber","262-555-0162","Father")},
+    {first:"Sophia",last:"Becker",grade:"K",crew:"Bears",allergies:"Dairy",medical:"",photoConsent:false,
+      guardians:[g("Nina Becker","262-555-0171","Mother"),g("Grandma Rose","262-555-0173","Grandmother")],emergency:g("Nina Becker","262-555-0171","Mother")},
+    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Doves",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Kate Hoffmann","262-555-0181","Mother")],emergency:g("Joe Hoffmann","262-555-0182","Father")},
+    {first:"Mia",last:"Keller",grade:"3",crew:"Lions",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
+      guardians:[g("Dana Keller","262-555-0191","Mother"),g("Rob Keller","262-555-0192","Father")],emergency:g("Dana Keller","262-555-0191","Mother")},
+    {first:"Ethan",last:"Braun",grade:"4",crew:"Eagles",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Lisa Braun","262-555-0201","Mother")],emergency:g("Tim Braun","262-555-0202","Father")},
+    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Bears",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Anne Vogel","262-555-0211","Mother"),g("Chris Vogel","262-555-0212","Father")],emergency:g("Anne Vogel","262-555-0211","Mother")},
+    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Doves",allergies:"",medical:"",photoConsent:false,
+      guardians:[g("Meg Zimmerman","262-555-0221","Mother")],emergency:g("Dave Zimmerman","262-555-0222","Father")},
+    {first:"Amelia",last:"Krause",grade:"K",crew:"Lions",allergies:"",medical:"",photoConsent:true,
+      guardians:[g("Sara Krause","262-555-0231","Mother"),g("Grandpa Bill","262-555-0233","Grandfather")],emergency:g("Sara Krause","262-555-0231","Mother")},
+    {first:"Jack",last:"Schulz",grade:"2",crew:"Eagles",allergies:"Gluten (celiac)",medical:"",photoConsent:true,
+      guardians:[g("Erin Schulz","262-555-0241","Mother")],emergency:g("Nate Schulz","262-555-0242","Father")}
+  ].map(k=>({id:uid(),...k}));
+  const volunteers=[
+    {id:uid(),name:"Barb Nelson",role:"Check-in lead"},
+    {id:uid(),name:"Judy Krueger",role:"Crew leader"},
+    {id:uid(),name:"Pastor Dave",role:"Director"},
+    {id:uid(),name:"Karen Weiss",role:"Snack team"},
+    {id:uid(),name:"Ruth Meyer",role:"Crew leader"}
+  ];
+  return {children:kids,volunteers,attendance:{}};
+}
+function demoStore(){
+  let raw=localStorage.getItem(DEMO_KEY);
+  if(!raw){ const s=seedDemo(); localStorage.setItem(DEMO_KEY,JSON.stringify(s)); return s; }
+  return JSON.parse(raw);
+}
+function demoSave(s){ localStorage.setItem(DEMO_KEY,JSON.stringify(s)); }
+
+const demoDB = {
+  async loadAll(){
+    const s=demoStore();
+    DATA.children=s.children; DATA.volunteers=s.volunteers;
+    DATA.attendance=s.attendance||{};
+  },
+  async checkIn(childId,day,by){
+    const s=demoStore(); s.attendance[day]=s.attendance[day]||{};
+    s.attendance[day][childId]={inAt:nowISO(),inBy:by||"",outAt:null,outBy:"",releasedTo:""};
+    demoSave(s); DATA.attendance=s.attendance;
+  },
+  async undoCheckIn(childId,day){
+    const s=demoStore(); if(s.attendance[day]) delete s.attendance[day][childId];
+    demoSave(s); DATA.attendance=s.attendance;
+  },
+  async checkOut(childId,day,releasedTo,by){
+    const s=demoStore(); s.attendance[day]=s.attendance[day]||{};
+    const r=s.attendance[day][childId]||{inAt:nowISO(),inBy:""};
+    r.outAt=nowISO(); r.outBy=by||""; r.releasedTo=releasedTo||"";
+    s.attendance[day][childId]=r; demoSave(s); DATA.attendance=s.attendance;
+  },
+  async saveChild(child){
+    const s=demoStore();
+    if(child.id && s.children.some(c=>c.id===child.id)){
+      s.children=s.children.map(c=>c.id===child.id?child:c);
+    } else { child.id=child.id||uid(); s.children.push(child); }
+    demoSave(s); DATA.children=s.children;
+  },
+  async saveVolunteer(v){
+    const s=demoStore(); v.id=v.id||uid(); s.volunteers.push(v);
+    demoSave(s); DATA.volunteers=s.volunteers;
+  }
+};
+
+/* ---- Supabase adapter (used only when LIVE) ---- */
+function loadScript(src){return new Promise((res,rej)=>{const el=document.createElement("script");el.src=src;el.onload=res;el.onerror=rej;document.head.appendChild(el);});}
+let SB=null;
+const liveDB = {
+  async loadAll(){
+    const {data:children}=await SB.from("children").select("*").order("last_name");
+    const {data:volunteers}=await SB.from("volunteers").select("*").order("name");
+    const {data:att}=await SB.from("attendance").select("*").in("event_date",CONFIG.dates);
+    DATA.children=(children||[]).map(mapChildFromDb);
+    DATA.volunteers=volunteers||[];
+    DATA.attendance={};
+    (att||[]).forEach(r=>{
+      DATA.attendance[r.event_date]=DATA.attendance[r.event_date]||{};
+      DATA.attendance[r.event_date][r.child_id]={inAt:r.checked_in_at,inBy:r.checked_in_by,outAt:r.checked_out_at,outBy:r.checked_out_by,releasedTo:r.released_to};
+    });
+  },
+  async checkIn(childId,day,by){
+    await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_in_at:nowISO(),checked_in_by:by,checked_out_at:null,checked_out_by:null,released_to:null},{onConflict:"child_id,event_date"});
+    await this.loadAll();
+  },
+  async undoCheckIn(childId,day){
+    await SB.from("attendance").delete().eq("child_id",childId).eq("event_date",day);
+    await this.loadAll();
+  },
+  async checkOut(childId,day,releasedTo,by){
+    await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_out_at:nowISO(),checked_out_by:by,released_to:releasedTo},{onConflict:"child_id,event_date"});
+    await this.loadAll();
+  },
+  async saveChild(child){
+    const row=mapChildToDb(child);
+    await SB.from("children").upsert(row);
+    await this.loadAll();
+  },
+  async saveVolunteer(v){ await SB.from("volunteers").insert(v); await this.loadAll(); }
+};
+function mapChildFromDb(r){return {id:r.id,first:r.first_name,last:r.last_name,grade:r.grade,crew:r.crew,allergies:r.allergies||"",medical:r.medical_notes||"",photoConsent:r.photo_consent,guardians:r.guardians||[],emergency:r.emergency||null,consent:r.consent||null};}
+function mapChildToDb(c){return {id:c.id,first_name:c.first,last_name:c.last,grade:c.grade,crew:c.crew,allergies:c.allergies,medical_notes:c.medical,photo_consent:c.photoConsent,guardians:c.guardians,emergency:c.emergency,consent:c.consent||null};}
+
+let db = demoDB;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function fullName(c){return c.first+" "+c.last;}
+function initials(c){return (c.first[0]||"")+(c.last[0]||"");}
+function gradeLabel(g){return g==="K"?"Kindergarten":"Grade "+g;}
+function gradeSort(g){return g==="K"?0:parseInt(g,10);}
+function fmtTime(iso){if(!iso)return"";const d=new Date(iso);return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
+function dayName(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});}
+function dayShort(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});}
+
+function statusOf(child,day){
+  const r=(DATA.attendance[day]||{})[child.id];
+  if(!r||!r.inAt) return {code:"notin",rec:null};
+  if(r.outAt) return {code:"out",rec:r};
+  return {code:"in",rec:r};
+}
+function sortedChildren(){
+  return [...DATA.children].sort((a,b)=>{
+    if(a.last!==b.last)return a.last.localeCompare(b.last);
+    return a.first.localeCompare(b.first);
+  });
+}
+function matches(c,q){
+  if(!q)return true; q=q.toLowerCase();
+  return fullName(c).toLowerCase().includes(q)||(c.crew||"").toLowerCase().includes(q);
+}
+function hasAlert(c){return (c.allergies&&c.allergies.trim())||(c.medical&&c.medical.trim());}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+let toastT=null;
+function toast(msg,undoFn){
+  const t=document.getElementById("toast");
+  t.innerHTML=esc(msg)+(undoFn?' <button data-undo>Undo</button>':'');
+  t.classList.add("show");
+  if(undoFn){t.querySelector("[data-undo]").onclick=()=>{clearTimeout(toastT);t.classList.remove("show");undoFn();};}
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),undoFn?5000:2500);
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+function go(view,extra={}){ Object.assign(state,{view,search:""},extra); window.scrollTo(0,0); render(); }
+async function refresh(){ await db.loadAll(); render(); }
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const app=document.getElementById("app");
+
+function topbar(title,sub,showBack,showDay){
+  return `<div class="topbar">
+    <div class="row">
+      ${showBack?`<button class="backbtn" data-act="back">‹</button>`:`<img class="topmark" src="assets/rainforest-falls.png" alt="">`}
+      <div style="flex:1">
+        <h1>${esc(title)}</h1>
+        ${sub?`<div class="sub">${esc(sub)}</div>`:``}
+      </div>
+      ${showDay?`<button class="daybadge" data-act="pickday">${dayShort(state.day)} ▾</button>`:``}
+    </div>
+  </div>`;
+}
+
+function render(){
+  const v=state.view;
+  if(v==="home") return renderHome();
+  if(v==="checkin") return renderCheckList("in");
+  if(v==="checkout") return renderCheckList("out");
+  if(v==="checkoutConfirm") return renderCheckoutConfirm();
+  if(v==="roster") return renderRoster();
+  if(v==="child") return renderChild();
+  if(v==="editChild") return renderEditChild();
+  if(v==="allergies") return renderAllergies();
+  if(v==="schedule") return renderSchedule();
+  if(v==="kitchen") return renderKitchen();
+  if(v==="consent") return renderConsent();
+  if(v==="volunteers") return renderVolunteers();
+  if(v==="pickday") return renderPickDay();
+  if(v==="info") return renderInfo();
+  renderHome();
+}
+
+function renderHome(){
+  const day=state.day;
+  const kids=DATA.children;
+  let inN=0,outN=0,notN=0,alertPresent=0;
+  kids.forEach(c=>{const s=statusOf(c,day).code;
+    if(s==="in"){inN++; if(hasAlert(c))alertPresent++;}
+    else if(s==="out")outN++; else notN++;});
+  const crewRows=CONFIG.crews.map(cr=>{
+    const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
+    const total=kids.filter(c=>c.crew===cr).length;
+    return `<div class="crewline"><span class="dot" style="background:${CONFIG.crewColors[cr]||'#999'}"></span>
+      <span class="name">${esc(cr)}</span><span class="cnt">${present} of ${total} here</span></div>`;
+  }).join("");
+
+  app.innerHTML = topbar(CONFIG.eventName, CONFIG.tagline, false, true) + `
+    <div class="content">
+      ${LIVE?"":`<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved.</div>`}
+      ${helperBar()}
+      <div class="stats">
+        <div class="stat green"><div class="n">${inN}</div><div class="l">✅ Here now</div></div>
+        <div class="stat slate"><div class="n">${outN}</div><div class="l">👋 Checked out</div></div>
+        <div class="stat primary"><div class="n">${notN}</div><div class="l">⏳ Not arrived</div></div>
+        <div class="stat amber"><div class="n">${kids.length}</div><div class="l">👧 Registered</div></div>
+      </div>
+      ${alertPresent>0?`<div class="alertbar">⚠️ ${alertPresent} child${alertPresent>1?"ren":""} here today ${alertPresent>1?"have":"has"} an allergy or medical note — <a class="link" data-act="allergies" style="color:inherit;text-decoration:underline">see list</a></div>`:``}
+
+      <h2 class="sect">Do something</h2>
+      <div class="actions">
+        <div class="act checkin" data-act="checkin"><span class="ico">✅</span>Check In</div>
+        <div class="act checkout" data-act="checkout"><span class="ico">👋</span>Check Out</div>
+        <div class="act" data-act="schedule"><span class="ico">🗓️</span>Schedule</div>
+        <div class="act" data-act="kitchen"><span class="ico">🍎</span>Snack Team</div>
+        <div class="act" data-act="roster"><span class="ico">📋</span>Roster</div>
+        <div class="act" data-act="allergies"><span class="ico">⚠️</span>Allergies</div>
+        <div class="act" data-act="volunteers"><span class="ico">👥</span>Volunteers</div>
+        <div class="act" data-act="info"><span class="ico">⋯</span>Info &amp; Setup</div>
+      </div>
+
+      <h2 class="sect">Crews — here now</h2>
+      ${crewRows}
+      <div class="brandfoot">
+        <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}">
+        <div class="tag">${esc(CONFIG.tagline)}</div>
+      </div>
+    </div>`;
+}
+
+function helperBar(){
+  const opts=DATA.volunteers.map(v=>`<option ${v.name===state.currentVolunteer?"selected":""}>${esc(v.name)}</option>`).join("");
+  return `<div class="helper">
+    <label>👤 Helper on duty:</label>
+    <select data-act="setvol"><option value="">— choose —</option>${opts}</select>
+  </div>`;
+}
+
+function renderCheckList(mode){
+  const day=state.day, q=state.search;
+  const list=sortedChildren().filter(c=>{
+    const s=statusOf(c,day).code;
+    return (mode==="in"? s!=="in" && s!=="out" : s==="in") && matches(c,q);
+  });
+  const rows=list.map(c=>{
+    const st=statusOf(c,day);
+    return `<div class="kid" data-act="${mode==='in'?'doCheckin':'toCheckout'}" data-id="${c.id}">
+      <div class="avatar">${esc(initials(c))}</div>
+      <div class="info"><div class="nm">${esc(fullName(c))}</div>
+        <div class="meta">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}
+          ${c.allergies?`<span class="tag allergy">⚠ ${esc(c.allergies.split(" ")[0])}</span>`:""}</div></div>
+      ${mode==='in'?'<span class="chev">＋</span>':'<span class="status in">Tap to check out</span>'}
+    </div>`;
+  }).join("") || `<div class="empty">${mode==='in'?"Everyone registered is checked in or out. 🎉":"No children are checked in right now."}</div>`;
+
+  app.innerHTML = topbar(mode==='in'?"Check In":"Check Out", dayName(day), true, true) + `
+    <div class="content">
+      ${helperBar()}
+      <input class="search" placeholder="Search a child's name…" value="${esc(q)}" data-search>
+      ${mode==='in'?`<div class="banner" style="background:#e7f6ec;border-color:#c3e6cf;color:#0b5c2e">Tap a name to check the child IN. ${list.length} waiting.</div>`:`<div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Tap a name to check the child OUT to a guardian. ${list.length} here now.</div>`}
+      <div class="list">${rows}</div>
+    </div>`;
+  focusSearch();
+}
+
+function renderCheckoutConfirm(){
+  const c=DATA.children.find(x=>x.id===state.selChild);
+  if(!c){go("checkout");return;}
+  const guards=(c.guardians||[]).filter(g=>g.canPickup!==false);
+  const gButtons=guards.map((g,i)=>`
+    <button class="pick ${state.selGuardian===i?'sel':''}" data-act="pickguard" data-i="${i}">
+      <div style="font-weight:700">${esc(g.name)}</div>
+      <div class="r">${esc(g.relationship||"Guardian")}</div>
+      ${g.phone?`<div class="ph">📞 ${esc(g.phone)}</div>`:""}
+    </button>`).join("");
+  const canConfirm = state.selGuardian!=null;
+  app.innerHTML = topbar("Check Out",fullName(c),true,false) + `
+    <div class="content">
+      <div class="panel" style="border-left:5px solid var(--primary)">
+        <h3>${esc(fullName(c))}</h3>
+        <div class="field"><div class="k">Grade / Crew</div><div class="v">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}</div></div>
+        ${hasAlert(c)?`<div class="field"><div class="k">⚠️ Health note</div><div class="v warn">${esc([c.allergies,c.medical].filter(Boolean).join("  ·  "))}</div></div>`:""}
+      </div>
+      <h2 class="sect">Who is picking up?</h2>
+      <div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">Only release to someone on this list. Not sure? Check ID and ask the check-in lead.</div>
+      ${gButtons || `<div class="empty">No authorized pickups listed. Ask the check-in lead before releasing.</div>`}
+      ${helperBar()}
+      <button class="btn green" data-act="confirmCheckout" ${canConfirm?"":'style="opacity:.45;pointer-events:none"'}>✅ Confirm check-out</button>
+      <button class="btn ghost" data-act="back">Cancel</button>
+    </div>`;
+}
+
+function renderRoster(){
+  const q=state.search;
+  const list=sortedChildren().filter(c=>matches(c,q));
+  const rows=list.map(c=>{
+    const st=statusOf(c,state.day).code;
+    const stTag = st==="in"?`<span class="status in">Here</span>`:st==="out"?`<span class="status out">Out</span>`:`<span class="status notin">—</span>`;
+    return `<div class="kid" data-act="child" data-id="${c.id}">
+      <div class="avatar">${esc(initials(c))}</div>
+      <div class="info"><div class="nm">${esc(fullName(c))}</div>
+        <div class="meta"><span class="tag grade">${esc(c.grade==="K"?"K":"Gr "+c.grade)}</span>${esc(c.crew)}
+          ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}</div></div>
+      ${stTag}<span class="chev">›</span>
+    </div>`;
+  }).join("") || `<div class="empty">No matches.</div>`;
+  app.innerHTML = topbar("Roster", DATA.children.length+" registered", true, true) + `
+    <div class="content">
+      <input class="search" placeholder="Search name or crew…" value="${esc(q)}" data-search>
+      <div class="list">${rows}</div>
+      <button class="btn ghost no-print" data-act="addChild" style="margin-top:16px">＋ Add a walk-up child</button>
+      <button class="btn ghost no-print" data-act="printRoster">🖨️ Print today's roster</button>
+    </div>`;
+  focusSearch();
+}
+
+function renderChild(){
+  const c=DATA.children.find(x=>x.id===state.selChild);
+  if(!c){go("roster");return;}
+  const st=statusOf(c,state.day);
+  const guards=(c.guardians||[]).map(g=>`
+    <div class="field"><div class="k">${esc(g.relationship||"Guardian")}${g.canPickup===false?" (NOT authorized pickup)":""}</div>
+      <div class="v">${esc(g.name)} ${g.phone?`· <a class="link" href="tel:${esc(g.phone.replace(/[^0-9]/g,''))}">${esc(g.phone)}</a>`:""}</div></div>`).join("");
+  app.innerHTML = topbar(fullName(c), gradeLabel(c.grade)+" · "+c.crew, true, false) + `
+    <div class="content">
+      <div class="panel">
+        <div class="field"><div class="k">Status today (${dayShort(state.day)})</div>
+          <div class="v">${st.code==="in"?`✅ Checked in at ${fmtTime(st.rec.inAt)}`:st.code==="out"?`👋 Out at ${fmtTime(st.rec.outAt)} to ${esc(st.rec.releasedTo||"—")}`:"⏳ Not arrived"}</div></div>
+        ${c.allergies?`<div class="field"><div class="k">⚠️ Allergies</div><div class="v warn">${esc(c.allergies)}</div></div>`:""}
+        ${c.medical?`<div class="field"><div class="k">✚ Medical notes</div><div class="v med">${esc(c.medical)}</div></div>`:""}
+        <div class="field"><div class="k">Photo / media consent</div><div class="v">${c.photoConsent?"✅ Yes":"🚫 No — do not photograph"}</div></div>
+        <div class="field"><div class="k">Signed parent consent</div><div class="v">${c.consent&&c.consent.signature?`✅ ${esc(c.consent.name||"")} · ${new Date(c.consent.signedAt).toLocaleDateString()}`:"❌ Not signed yet"}</div></div>
+      </div>
+      <div class="panel"><h3 style="font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Guardians &amp; pickup</h3>${guards||'<div class="v">None listed</div>'}
+        ${c.emergency?`<div class="field"><div class="k">Emergency contact</div><div class="v">${esc(c.emergency.name)} (${esc(c.emergency.relationship||"")}) ${c.emergency.phone?`· <a class="link" href="tel:${esc(c.emergency.phone.replace(/[^0-9]/g,''))}">${esc(c.emergency.phone)}</a>`:""}</div></div>`:""}
+      </div>
+      ${st.code!=="in"?`<button class="btn green no-print" data-act="doCheckin" data-id="${c.id}">✅ Check in now</button>`:`<button class="btn blue no-print" data-act="toCheckout" data-id="${c.id}">👋 Check out</button>`}
+      <button class="btn ghost no-print" data-act="consent" data-id="${c.id}">✍️ ${c.consent&&c.consent.signature?"View":"Sign"} parent consent</button>
+      <button class="btn ghost no-print" data-act="editChild" data-id="${c.id}">✏️ Edit details</button>
+    </div>`;
+}
+
+function renderAllergies(){
+  const day=state.day;
+  const list=sortedChildren().filter(hasAlert);
+  const rows=list.map(c=>{
+    const st=statusOf(c,day).code;
+    return `<div class="kid" data-act="child" data-id="${c.id}">
+      <div class="avatar" style="background:var(--red-bg);color:var(--red)">${esc(initials(c))}</div>
+      <div class="info"><div class="nm">${esc(fullName(c))} ${st==="in"?'<span class="status in" style="font-size:11px">Here</span>':""}</div>
+        <div class="meta">${esc(c.crew)} · ${esc(gradeLabel(c.grade))}</div>
+        ${c.allergies?`<div class="v warn" style="font-size:15px;margin-top:4px">⚠️ ${esc(c.allergies)}</div>`:""}
+        ${c.medical?`<div class="v med" style="font-size:15px;margin-top:2px">✚ ${esc(c.medical)}</div>`:""}
+      </div></div>`;
+  }).join("") || `<div class="empty">No allergy or medical notes on file. 🎉</div>`;
+  app.innerHTML = topbar("Allergies & Medical", list.length+" children flagged", true, true) + `
+    <div class="content">
+      <div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">Snack &amp; crew teams: check this before serving food or activities.</div>
+      <div class="list">${rows}</div>
+      <button class="btn ghost no-print" data-act="printRoster" style="margin-top:16px">🖨️ Print this list</button>
+    </div>`;
+}
+
+function renderVolunteers(){
+  const rows=DATA.volunteers.map(v=>`<div class="kid" style="cursor:default">
+    <div class="avatar">${esc((v.name[0]||"")+((v.name.split(" ")[1]||" ")[0]||""))}</div>
+    <div class="info"><div class="nm">${esc(v.name)}</div><div class="meta">${esc(v.role||"Volunteer")}${v.phone?" · "+esc(v.phone):""}</div></div>
+  </div>`).join("") || `<div class="empty">No volunteers added yet.</div>`;
+  app.innerHTML = topbar("Volunteers", DATA.volunteers.length+" helpers", true, false) + `
+    <div class="content">
+      <div class="list">${rows}</div>
+      <div class="form panel" style="margin-top:16px">
+        <h3 style="font-size:16px">Add a volunteer</h3>
+        <label>Name</label><input id="vname" placeholder="First Last">
+        <label>Role (optional)</label><input id="vrole" placeholder="Crew leader, Snack team…">
+        <button class="btn blue" data-act="saveVol" style="margin-top:14px">Add volunteer</button>
+      </div>
+    </div>`;
+}
+
+function renderPickDay(){
+  const rows=CONFIG.dates.map(d=>`<button class="pick ${d===state.day?'sel':''}" data-act="chooseDay" data-d="${d}">
+    <div style="font-weight:700">${dayName(d)}</div>
+    <div class="r">${d===defaultDay()?"Today":""}</div></button>`).join("");
+  app.innerHTML = topbar("Choose day","",true,false) + `<div class="content"><h2 class="sect">Event days</h2>${rows}</div>`;
+}
+
+function renderEditChild(){
+  const c=state.editChild||{id:"",first:"",last:"",grade:"K",crew:CONFIG.crews[0],allergies:"",medical:"",photoConsent:true,guardians:[{name:"",phone:"",relationship:"Mother",canPickup:true}],emergency:{name:"",phone:"",relationship:""}};
+  const isNew=!c.id;
+  const g0=(c.guardians&&c.guardians[0])||{name:"",phone:"",relationship:"Mother"};
+  const g1=(c.guardians&&c.guardians[1])||{name:"",phone:"",relationship:"Father"};
+  const em=c.emergency||{name:"",phone:"",relationship:""};
+  const crewOpts=CONFIG.crews.map(cr=>`<option ${c.crew===cr?"selected":""}>${esc(cr)}</option>`).join("");
+  const gradeOpts=["K","1","2","3","4","5"].map(gr=>`<option ${c.grade===gr?"selected":""}>${gr}</option>`).join("");
+  app.innerHTML = topbar(isNew?"Add child":"Edit child","",true,false) + `
+    <div class="content form">
+      <div class="two"><div><label>First name</label><input id="f_first" value="${esc(c.first)}"></div>
+        <div><label>Last name</label><input id="f_last" value="${esc(c.last)}"></div></div>
+      <div class="two"><div><label>Grade</label><select id="f_grade">${gradeOpts}</select></div>
+        <div><label>Crew</label><select id="f_crew">${crewOpts}</select></div></div>
+      <label>Allergies (leave blank if none)</label><input id="f_all" value="${esc(c.allergies)}" placeholder="e.g. Peanuts, Dairy">
+      <label>Medical notes</label><textarea id="f_med" placeholder="Asthma, EpiPen location, care plan…">${esc(c.medical)}</textarea>
+      <div class="chk"><input type="checkbox" id="f_photo" ${c.photoConsent?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">Photo / media consent given</label></div>
+
+      <h2 class="sect">Guardian 1 (authorized pickup)</h2>
+      <div class="two"><div><label>Name</label><input id="g0_name" value="${esc(g0.name)}"></div>
+        <div><label>Relationship</label><input id="g0_rel" value="${esc(g0.relationship)}"></div></div>
+      <label>Phone</label><input id="g0_phone" value="${esc(g0.phone)}" inputmode="tel">
+
+      <h2 class="sect">Guardian 2 (optional)</h2>
+      <div class="two"><div><label>Name</label><input id="g1_name" value="${esc(g1.name)}"></div>
+        <div><label>Relationship</label><input id="g1_rel" value="${esc(g1.relationship)}"></div></div>
+      <label>Phone</label><input id="g1_phone" value="${esc(g1.phone)}" inputmode="tel">
+
+      <h2 class="sect">Emergency contact</h2>
+      <div class="two"><div><label>Name</label><input id="e_name" value="${esc(em.name)}"></div>
+        <div><label>Phone</label><input id="e_phone" value="${esc(em.phone)}" inputmode="tel"></div></div>
+
+      <button class="btn blue" data-act="saveChild" style="margin-top:18px">Save child</button>
+      <button class="btn ghost" data-act="back">Cancel</button>
+    </div>`;
+}
+
+function renderSchedule(){
+  const rows=CONFIG.schedule.map(s=>{
+    if(s.all) return `<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")}</div></div>`;
+    const chips=CONFIG.crews.map(g=>`<span class="gchip"><span class="dot" style="background:${CONFIG.crewColors[g]||'#999'}"></span><b>${esc(g)}</b> <span class="arw">→</span> ${esc((s.assign&&s.assign[g])||"—")}</span>`).join("");
+    return `<div class="slot"><div class="t">🕐 ${esc(s.time)}</div><div class="assign">${chips}</div></div>`;
+  }).join("");
+  app.innerHTML = topbar("Daily Schedule", dayName(state.day), true, true) + `
+    <div class="content">
+      <div class="banner">Where each group is through the day. This is a sample rotation — send me your real schedule and colors and I'll load it.</div>
+      ${rows}
+    </div>`;
+}
+
+function renderKitchen(){
+  const day=state.day;
+  const snackSlots=CONFIG.schedule.filter(s=>s.assign).map(s=>{
+    const grp=CONFIG.crews.find(g=>((s.assign[g]||"").toLowerCase().includes("snack")));
+    return {time:s.time,grp};
+  }).filter(x=>x.grp);
+  const cards=snackSlots.map(({time,grp})=>{
+    const inGroup=DATA.children.filter(c=>c.crew===grp);
+    const present=inGroup.filter(c=>statusOf(c,day).code==="in");
+    const allergic=inGroup.filter(c=>c.allergies&&c.allergies.trim());
+    const alList=allergic.map(c=>`• <b>${esc(fullName(c))}</b> — ${esc(c.allergies)}`).join("<br>");
+    const medic=inGroup.filter(c=>c.medical&&c.medical.trim());
+    return `<div class="snackcard" style="border-left-color:${CONFIG.crewColors[grp]||'var(--primary)'}">
+      <div class="hd"><span style="width:16px;height:16px;border-radius:50%;background:${CONFIG.crewColors[grp]||'#999'};display:inline-block"></span>
+        <span class="grp">${esc(grp)}</span><span class="cnt">🕐 ${esc(time)}<br>${present.length} here / ${inGroup.length} total</span></div>
+      ${allergic.length?`<div class="al">⚠️ ${allergic.length} allergy alert${allergic.length>1?'s':''}:<br>${alList}</div>`:`<div class="ok">✅ No allergies in this group</div>`}
+      ${medic.length?`<div class="al" style="background:var(--amber-bg);color:var(--amber)">✚ Medical: ${medic.map(c=>esc(fullName(c))+" ("+esc(c.medical)+")").join("; ")}</div>`:``}
+    </div>`;
+  }).join("");
+  app.innerHTML = topbar("Snack Team", dayName(state.day), true, true) + `
+    <div class="content">
+      <div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Groups in the order they arrive at snack, each with its allergy alerts. “Here” = kids from that group already checked in.</div>
+      ${cards || '<div class="empty">No snack rotation set yet.</div>'}
+    </div>`;
+}
+
+let sigPad=null;
+function initSigPad(){
+  const canvas=document.getElementById("sigpad"); if(!canvas)return;
+  const ratio=window.devicePixelRatio||1;
+  const rect=canvas.getBoundingClientRect();
+  canvas.width=Math.max(1,rect.width*ratio); canvas.height=Math.max(1,rect.height*ratio);
+  const ctx=canvas.getContext("2d"); ctx.scale(ratio,ratio);
+  ctx.lineWidth=2.5; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#12303f";
+  let drawing=false,last=null,dirty=false;
+  const pos=e=>{const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left),y:(e.clientY-r.top)};};
+  const start=e=>{drawing=true;last=pos(e);dirty=true;e.preventDefault();};
+  const move=e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;e.preventDefault();};
+  const end=()=>{drawing=false;};
+  canvas.addEventListener("pointerdown",start);
+  canvas.addEventListener("pointermove",move);
+  window.addEventListener("pointerup",end);
+  sigPad={clear:()=>{ctx.clearRect(0,0,canvas.width,canvas.height);dirty=false;},isDirty:()=>dirty,dataUrl:()=>canvas.toDataURL("image/png")};
+}
+function renderConsent(){
+  const c=DATA.children.find(x=>x.id===state.selChild);
+  if(!c){go("roster");return;}
+  const con=c.consent;
+  app.innerHTML = topbar("Parent Consent", fullName(c), true, false) + `
+    <div class="content">
+      <div class="panel">
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700">Consent &amp; release</div>
+        <p style="font-size:14.5px;color:var(--slate);line-height:1.55;margin:8px 0 0">${esc(CONSENT_TEXT)}</p>
+      </div>
+      ${con&&con.signature?`<div class="panel"><div class="field"><div class="k">On file</div><div class="v">✅ Signed by ${esc(con.name||"")} · ${new Date(con.signedAt).toLocaleString()}</div></div>
+        <img src="${con.signature}" alt="signature" style="max-width:100%;border:1px solid var(--line);border-radius:10px;margin-top:8px;background:#fff"></div>`:""}
+      <div class="form panel">
+        <label>Parent / guardian name</label>
+        <input id="sig_name" value="${esc(con?con.name||"":"")}" placeholder="Full name">
+        <label>Sign below with your finger</label>
+        <canvas id="sigpad"></canvas>
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <button class="btn ghost" data-act="clearSig" style="margin:0;flex:1">Clear</button>
+          <button class="btn blue" data-act="saveConsent" style="margin:0;flex:2">Save signature</button>
+        </div>
+      </div>
+    </div>`;
+  initSigPad();
+}
+
+function renderLogin(err){
+  app.innerHTML = `
+    <div class="topbar"><div class="row"><div style="flex:1"><h1>${esc(CONFIG.eventName)}</h1><div class="sub">Admin sign-in</div></div></div></div>
+    <div class="content"><div class="login-wrap"><div class="login-card">
+      <img src="assets/rainforest-falls.png" alt="Rainforest Falls VBS" style="width:200px;max-width:74%;display:block;margin:0 auto 4px">
+      <div style="text-align:center;color:var(--gold);font-weight:700;font-size:13.5px;margin-bottom:16px">${esc(CONFIG.tagline)}</div>
+      <h2>Sign in</h2>
+      <p>Admin team only. Use the shared login your director gave you.</p>
+      ${err?`<div class="login-err">${esc(err)}</div>`:``}
+      <div class="form">
+        <label>Email</label><input id="lg_email" type="email" autocomplete="username" inputmode="email" placeholder="you@church.org">
+        <label>Password</label><input id="lg_pass" type="password" autocomplete="current-password" placeholder="Password">
+        <button class="btn blue" data-act="login" style="margin-top:16px">Sign in</button>
+      </div>
+      <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}" style="width:210px;max-width:80%;display:block;margin:22px auto 0;opacity:.9">
+    </div></div></div>`;
+  const p=document.getElementById("lg_pass");
+  if(p) p.addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+}
+async function doLogin(){
+  const emailEl=document.getElementById("lg_email"), passEl=document.getElementById("lg_pass");
+  const email=(emailEl&&emailEl.value||"").trim(), pass=(passEl&&passEl.value)||"";
+  if(!email||!pass){ renderLogin("Enter your email and password."); return; }
+  try{
+    const {error}=await SB.auth.signInWithPassword({email,password:pass});
+    if(error){ renderLogin(error.message||"Sign-in failed."); return; }
+    authed=true; await db.loadAll(); go("home");
+  }catch(err){ renderLogin("Sign-in failed. Check the wifi connection and try again."); }
+}
+async function doLogout(){
+  try{ await SB.auth.signOut(); }catch(e){}
+  authed=false; renderLogin();
+}
+
+function renderInfo(){
+  app.innerHTML = topbar("Info & Setup","",true,false) + `
+    <div class="content info">
+      <div class="panel">
+        <h3>Mode: ${LIVE?"🟢 Live (synced)":"🧪 Demo (this phone only)"}</h3>
+        <p>${LIVE?"Check-ins sync across every volunteer's phone in real time.":"You're testing with sample kids. Nothing here is saved to the cloud, and it won't show up on other phones. When you're happy with how it works, we switch on live sync."}</p>
+      </div>
+      <div class="panel">
+        <h3>Keeping kids safe</h3>
+        <p>• Only release a child to a guardian shown on their record. If unsure, check ID and ask the check-in lead.</p>
+        <p>• Every check-out records who picked up and when.</p>
+        <p>• The app is password-protected in live mode. Nothing is stored on your phone.</p>
+      </div>
+      <div class="panel">
+        <h3>Print a paper backup</h3>
+        <p>Each morning, tap <b>Roster → Print today's roster</b>. Keep a paper copy at the table in case wifi drops.</p>
+      </div>
+      <div class="panel">
+        <h3>After the event</h3>
+        <p>Children's info is deleted once VBS wraps and follow-up is done. Ask Chief to run the purge.</p>
+      </div>
+      ${LIVE?"":`<button class="btn red no-print" data-act="resetDemo">🔄 Reset demo data</button>`}
+      ${LIVE?`<button class="btn ghost no-print" data-act="signout">Sign out</button>`:``}
+      <div class="brandfoot"><img src="assets/church-logo.png" alt="${esc(CONFIG.church)}"><div class="tag">${esc(CONFIG.tagline)}</div></div>
+    </div>`;
+}
+
+/* ============================================================
+   PRINT
+   ============================================================ */
+function printRoster(){
+  const day=state.day;
+  const rows=sortedChildren().map(c=>{
+    const st=statusOf(c,day);
+    return `<tr>
+      <td>${esc(fullName(c))}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td>
+      <td>${esc([c.allergies,c.medical].filter(Boolean).join("; ")||"")}</td>
+      <td>${esc((c.guardians||[]).map(g=>g.name+(g.phone?" "+g.phone:"")).join(" / "))}</td>
+      <td style="width:70px"></td><td style="width:70px"></td></tr>`;
+  }).join("");
+  const w=window.open("","_blank");
+  w.document.write(`<html><head><title>VBS Roster ${day}</title>
+    <style>body{font-family:Arial;font-size:12px;padding:16px}h2{margin:0}table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border:1px solid #999;padding:5px;text-align:left;vertical-align:top}th{background:#eee}</style></head>
+    <body><h2>${esc(CONFIG.eventName)}</h2><div>${dayName(day)} — paper backup</div>
+    <table><thead><tr><th>Child</th><th>Gr</th><th>Crew</th><th>Allergy / Medical</th><th>Guardians</th><th>In</th><th>Out</th></tr></thead>
+    <tbody>${rows}</tbody></table></body></html>`);
+  w.document.close(); setTimeout(()=>w.print(),300);
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+function focusSearch(){
+  const s=app.querySelector("[data-search]");
+  if(s){s.addEventListener("input",e=>{state.search=e.target.value;
+    // re-render just the list without losing focus: full render then refocus
+    const pos=e.target.selectionStart; render();
+    const n=app.querySelector("[data-search]"); if(n){n.focus();n.setSelectionRange(pos,pos);}
+  });}
+}
+
+app.addEventListener("change",e=>{
+  const sel=e.target.closest("[data-act='setvol']");
+  if(sel){state.currentVolunteer=sel.value;localStorage.setItem("vbs_vol",sel.value);}
+});
+
+app.addEventListener("click",async e=>{
+  const el=e.target.closest("[data-act]"); if(!el)return;
+  const act=el.getAttribute("data-act"); const id=el.getAttribute("data-id");
+  switch(act){
+    case "back": history.length; go(prevView()); break;
+    case "checkin": go("checkin"); break;
+    case "checkout": go("checkout"); break;
+    case "roster": go("roster"); break;
+    case "allergies": go("allergies"); break;
+    case "schedule": go("schedule"); break;
+    case "kitchen": go("kitchen"); break;
+    case "consent": go("consent",{selChild:id||state.selChild}); break;
+    case "clearSig": if(sigPad) sigPad.clear(); break;
+    case "saveConsent": {
+      const nm=(document.getElementById("sig_name")||{}).value||"";
+      if(!sigPad||!sigPad.isDirty()){ toast("Please sign in the box first"); break; }
+      const c=DATA.children.find(x=>x.id===state.selChild); if(!c) break;
+      c.consent={name:nm.trim(),signature:sigPad.dataUrl(),signedAt:nowISO()};
+      await db.saveChild(c); go("child",{selChild:c.id}); toast("✍️ Consent saved for "+fullName(c));
+      break;
+    }
+    case "volunteers": go("volunteers"); break;
+    case "info": go("info"); break;
+    case "pickday": go("pickday"); break;
+    case "chooseDay": state.day=el.getAttribute("data-d"); go("home"); break;
+    case "child": go("child",{selChild:id}); break;
+    case "addChild": go("editChild",{editChild:null}); break;
+    case "editChild": go("editChild",{editChild:DATA.children.find(c=>c.id===(id||state.selChild))}); break;
+
+    case "doCheckin": {
+      const c=DATA.children.find(x=>x.id===id);
+      await db.checkIn(id,state.day,state.currentVolunteer);
+      render();
+      toast("✅ "+fullName(c)+" checked in", async()=>{await db.undoCheckIn(id,state.day);render();});
+      break;
+    }
+    case "toCheckout": go("checkoutConfirm",{selChild:id,selGuardian:null}); break;
+    case "pickguard": state.selGuardian=parseInt(el.getAttribute("data-i"),10); render(); break;
+    case "confirmCheckout": {
+      const c=DATA.children.find(x=>x.id===state.selChild);
+      const g=(c.guardians||[]).filter(x=>x.canPickup!==false)[state.selGuardian];
+      await db.checkOut(c.id,state.day,g?g.name:"",state.currentVolunteer);
+      go("checkout");
+      toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian"));
+      break;
+    }
+    case "saveChild": {
+      const gv=id=>document.getElementById(id).value.trim();
+      const guardians=[];
+      if(gv("g0_name")) guardians.push({name:gv("g0_name"),phone:gv("g0_phone"),relationship:gv("g0_rel")||"Guardian",canPickup:true});
+      if(gv("g1_name")) guardians.push({name:gv("g1_name"),phone:gv("g1_phone"),relationship:gv("g1_rel")||"Guardian",canPickup:true});
+      const child={
+        id:(state.editChild&&state.editChild.id)||"",
+        first:gv("f_first"),last:gv("f_last"),grade:gv("f_grade"),crew:gv("f_crew"),
+        allergies:gv("f_all"),medical:document.getElementById("f_med").value.trim(),
+        photoConsent:document.getElementById("f_photo").checked,
+        guardians,
+        emergency: gv("e_name")?{name:gv("e_name"),phone:gv("e_phone"),relationship:""}:null
+      };
+      if(!child.first||!child.last){toast("Please enter first and last name");break;}
+      await db.saveChild(child); go("roster"); toast("Saved "+fullName(child));
+      break;
+    }
+    case "saveVol": {
+      const name=document.getElementById("vname").value.trim();
+      if(!name){toast("Enter a name");break;}
+      await db.saveVolunteer({name,role:document.getElementById("vrole").value.trim()});
+      go("volunteers"); toast("Added "+name);
+      break;
+    }
+    case "printRoster": printRoster(); break;
+    case "resetDemo": localStorage.removeItem(DEMO_KEY); await db.loadAll(); go("home"); toast("Demo reset"); break;
+    case "login": await doLogin(); break;
+    case "signout": await doLogout(); break;
+  }
+});
+
+function prevView(){
+  const v=state.view;
+  if(v==="child") return "roster";
+  if(v==="editChild") return state.editChild?"child":"roster";
+  if(v==="consent") return "child";
+  if(v==="checkoutConfirm") return "checkout";
+  if(["checkin","checkout","roster","allergies","schedule","kitchen","volunteers","info","pickday"].includes(v)) return "home";
+  return "home";
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+(async function init(){
+  // QA hook: open with ?preview=login to see the live sign-in screen in demo.
+  if(!LIVE && location.search.includes("preview=login")){ renderLogin("Preview only — this is the live sign-in screen."); return; }
+
+  if(LIVE){
+    try{
+      await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
+      SB=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey);
+      db=liveDB;
+      SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; });
+      const {data}=await SB.auth.getSession();
+      if(!(data&&data.session)){ renderLogin(); return; }   // must sign in first
+      authed=true;
+    }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }
+  }
+  await db.loadAll();
+  render();
+})();
+</script>
+</body>
+</html>

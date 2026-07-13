@@ -1,0 +1,4 @@
+build_standalone.py
+cors_serve.py
+vbs-standalone.html
+__pycache__/

@@ -328,8 +328,8 @@ const CONFIG = {
     {date:"2026-08-09", time:"10:30 am", title:"Sanctuary teardown"}
   ],
   // --- paste these two to go live; leave blank for demo mode ---
-  supabaseUrl:     "",
-  supabaseAnonKey: ""
+  supabaseUrl:     "https://uvmptaurflsohnhnazuv.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV2bXB0YXVyZmxzb2huaG5henV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5MzA1NjYsImV4cCI6MjA5OTUwNjU2Nn0.gKbCaWN7n9_V2J9UML-fN6Nhv5GjZ8f4YFr_a4NAYxk"
 };
 const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
@@ -408,7 +408,7 @@ let state = {
   selChild:null, selGuardian:null, editChild:null, currentUser:null,
   pickReturn:"home", statKind:null,
   fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false,
-  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}
+  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:""
 };
 let authed = false;
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
@@ -1710,40 +1710,49 @@ function renderConsent(){
 }
 
 function renderLogin(err){
+  const sent = state.magicSent;
+  const body = sent ? `
+      <h2>Check your email 📬</h2>
+      <p>We sent a one-tap sign-in link to <b>${esc(sent)}</b>. Open it on this phone and you're in — no password needed.</p>
+      <p class="mini" style="margin-top:10px">Didn't get it within a minute? Check spam, make sure you used the email your director set up, or ask them to add you.</p>
+      <button class="btn ghost" data-act="magicReset" style="margin-top:14px">Use a different email</button>
+    ` : `
+      <h2>Sign in</h2>
+      <p>Team members only. Enter the email your director set you up with and we'll send a one-tap login link — no password to remember.</p>
+      ${err?`<div class="login-err">${esc(err)}</div>`:``}
+      <div class="form">
+        <label>Email</label><input id="lg_email" type="email" autocomplete="username" inputmode="email" placeholder="you@email.com">
+        <button class="btn blue" data-act="magicLink" style="margin-top:16px">Send my login link</button>
+      </div>`;
   app.innerHTML = `
-    <div class="topbar"><div class="row"><div style="flex:1"><h1>${esc(CONFIG.eventName)}</h1><div class="sub">Admin sign-in</div></div></div></div>
+    <div class="topbar"><div class="row"><div style="flex:1"><h1>${esc(CONFIG.eventName)}</h1><div class="sub">Team sign-in</div></div></div></div>
     <div class="content"><div class="login-wrap"><div class="login-card">
       <img src="assets/rainforest-falls.png" alt="Rainforest Falls VBS" style="width:200px;max-width:74%;display:block;margin:0 auto 4px">
       <div style="text-align:center;color:var(--gold);font-weight:700;font-size:13.5px;margin-bottom:16px">${esc(CONFIG.tagline)}</div>
-      <h2>Sign in</h2>
-      <p>Team members only. Use the login your director set up for you.</p>
-      ${err?`<div class="login-err">${esc(err)}</div>`:``}
-      <div class="form">
-        <label>Email</label><input id="lg_email" type="email" autocomplete="username" inputmode="email" placeholder="you@church.org">
-        <label>Password</label><input id="lg_pass" type="password" autocomplete="current-password" placeholder="Password">
-        <button class="btn blue" data-act="login" style="margin-top:16px">Sign in</button>
-      </div>
+      ${body}
       <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}" style="width:210px;max-width:80%;display:block;margin:22px auto 0;opacity:.9">
     </div></div></div>`;
-  const p=document.getElementById("lg_pass");
-  if(p) p.addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+  const e=document.getElementById("lg_email");
+  if(e) e.addEventListener("keydown",ev=>{ if(ev.key==="Enter") sendMagicLink(); });
 }
-async function doLogin(){
-  const emailEl=document.getElementById("lg_email"), passEl=document.getElementById("lg_pass");
-  const email=(emailEl&&emailEl.value||"").trim(), pass=(passEl&&passEl.value)||"";
-  if(!email||!pass){ renderLogin("Enter your email and password."); return; }
+async function sendMagicLink(){
+  const emailEl=document.getElementById("lg_email");
+  const email=(emailEl&&emailEl.value||"").trim().toLowerCase();
+  if(!email){ renderLogin("Enter your email."); return; }
+  if(!SB){ renderLogin("Sign-in isn't switched on yet."); return; }
   try{
-    const {data:sd,error}=await SB.auth.signInWithPassword({email,password:pass});
-    if(error){ renderLogin(error.message||"Sign-in failed."); return; }
-    authed=true; state.currentUser=(sd&&sd.user&&sd.user.email)||email;
-    await db.loadAll();
-    try{ await db.logActivity({at:nowISO(),user:state.currentUser,action:"Signed in"}); }catch(e){}
-    go("home");
-  }catch(err){ renderLogin("Sign-in failed. Check the wifi connection and try again."); }
+    // shouldCreateUser:false — only volunteers the director provisioned can sign in.
+    const {error}=await SB.auth.signInWithOtp({email, options:{shouldCreateUser:false, emailRedirectTo:window.location.href.split("#")[0]}});
+    if(error && /not allowed|signups|user/i.test(error.message||"")){
+      renderLogin("That email isn't set up for the app yet. Ask your director to add you."); return;
+    }
+    if(error){ renderLogin(error.message||"Couldn't send the link. Check wifi and try again."); return; }
+    state.magicSent=email; renderLogin();
+  }catch(err){ renderLogin("Couldn't send the link. Check wifi and try again."); }
 }
 async function doLogout(){
   try{ await SB.auth.signOut(); }catch(e){}
-  authed=false; renderLogin();
+  authed=false; state.currentUser=null; state.magicSent=""; renderLogin();
 }
 
 function renderActivity(){
@@ -2321,7 +2330,8 @@ app.addEventListener("click",async e=>{
     }
     case "printRoster": printToday(); break;
     case "resetDemo": localStorage.removeItem(DEMO_KEY); state.realLoaded=false; await db.loadAll(); go("home"); toast("Demo reset"); break;
-    case "login": await doLogin(); break;
+    case "magicLink": await sendMagicLink(); break;
+    case "magicReset": state.magicSent=""; renderLogin(); break;
     case "signout": await doLogout(); break;
   }
 });
@@ -2354,8 +2364,12 @@ function prevView(){
       await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
       SB=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey);
       db=liveDB;
-      SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; });
+      SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; if(s&&s.user) state.currentUser=s.user.email; });
       const {data}=await SB.auth.getSession();
+      // Clean the magic-link tokens out of the URL after they've been consumed.
+      if(location.hash.includes("access_token")||location.hash.includes("error=")){
+        history.replaceState(null,"",location.pathname+location.search);
+      }
       if(!(data&&data.session)){ renderLogin(); return; }
       authed=true; state.currentUser=data.session.user.email;
     }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }

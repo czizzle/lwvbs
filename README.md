@@ -33,17 +33,29 @@ Open `index.html` in any phone or laptop browser. It loads with sample kids, sav
 the cloud, and needs no login. Use **⋯ Info → Preview a role** to see each volunteer's view.
 Reset anytime under **⋯ Info → Reset demo**.
 
-## Going live (real sync across every phone)
-1. In Supabase, open the **SQL editor** and run `schema.sql`.
-2. In **Authentication → Users**, add an account for each team member (email + password).
-3. In **Table editor → volunteers**, set each person's `role_key` and matching `email`
-   (that's how their role is resolved at sign-in).
-4. In `index.html`, fill in `CONFIG.supabaseUrl` and `CONFIG.supabaseAnonKey`
-   (Supabase → Project Settings → API).
-5. Host the file (GitHub Pages is already set up) and share the link.
+## Going live (real sync across every phone, passwordless magic-link login)
+1. **Create a Supabase project** (or reuse one) and run `schema.sql` in the SQL editor.
+2. **Seed the data**: run `private/seed-real.sql` (children + all 34 volunteers).
+3. **Create login accounts** (operational roles only — leaders, check-in/out, station/snack
+   leaders, pastor, CDC admin; ~19). Set your project keys and run the provisioner:
+   ```
+   SUPABASE_URL=https://<proj>.supabase.co SUPABASE_SERVICE_KEY=<service_role> \
+     python private/provision_users.py        # --dry-run first to preview
+   ```
+   It creates email-confirmed, passwordless users. Crew/assistant volunteers are skipped
+   (they still show in the roster; they just don't sign in).
+4. **Custom email sender** (Authentication → Email → SMTP): point it at a real sender so
+   ~19 people can request links the same morning without hitting Supabase's built-in send
+   limit. (The default sender is fine for a few test logins.) Add the app URL under
+   Authentication → URL Configuration → Redirect URLs.
+5. **Flip it on**: fill `CONFIG.supabaseUrl` + `CONFIG.supabaseAnonKey` in `index.html`
+   (Project Settings → API) and re-deploy.
 
-> With live keys the app requires a Supabase login before showing any data. The anon key is
-> safe in the page: Row Level Security means nothing is readable until a volunteer signs in.
+> **How sign-in works:** a volunteer opens the app, types their email, taps **Send my login
+> link**, and clicks the one-tap link in their inbox — no password ever. `shouldCreateUser`
+> is off, so only people the provisioner added can get in. Sessions persist, so one link at
+> the start covers the whole event.
+> RLS means the anon key in the page is safe: nothing is readable until a volunteer signs in.
 > Preview the sign-in screen anytime with `index.html?preview=login`.
 
 ## Security & privacy

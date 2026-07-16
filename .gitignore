@@ -4,3 +4,11 @@ vbs-standalone.html
 __pycache__/
 
 docs/
+
+# ---- Real children's / volunteers' PII — NEVER commit or push ----
+# The public GitHub Pages site has no login, so real registration data
+# must stay off the repo. These live only on trusted local machines /
+# Supabase. See docs/VBS-App-v2-Build-Notes.md.
+private/
+roster-real.js
+seed-real.sql

@@ -27,8 +27,11 @@ create table if not exists public.children (
   parent        jsonb,                 -- {first,last,email,phone,altPhone,street,city,state,zip,photoConsent,emergency:{name,relationship,phone},altPickup:{name,phone}}
   extra_pickups jsonb default '[]',    -- [{name,phone,relationship}] added at check-in
   consent       jsonb,                 -- {name, signature(dataURL), signedAt} — held for a future year
+  flags         jsonb default '[]',    -- [{type,level,msg,ack:{by,at,note}|null}] import anomaly review
   created_at    timestamptz default now()
 );
+-- (older projects) make sure the anomaly-review column exists:
+alter table public.children add column if not exists flags jsonb default '[]';
 
 -- Volunteers (also feeds the "helper on duty" picker + drives role-based access)
 create table if not exists public.volunteers (
@@ -102,6 +105,30 @@ create policy "team writes settings" on public.app_settings for all    to authen
 -- Audit log: signed-in team can read + append, but NOT edit/delete (keeps the trail honest)
 create policy "team reads log"       on public.activity_log for select to authenticated using (true);
 create policy "team appends log"     on public.activity_log for insert to authenticated with check (true);
+
+-- ============================================================
+-- Event RSVPs (who's coming to each calendar event) + team chat
+-- ============================================================
+create table if not exists public.event_rsvps (
+  event_id text not null,
+  who      text not null,          -- volunteer email (live) / name (demo)
+  status   text not null,          -- 'going' | 'maybe' | 'no'
+  at       timestamptz default now(),
+  primary key (event_id, who)
+);
+create table if not exists public.messages (
+  id       bigint generated always as identity primary key,
+  by_name  text,
+  by_email text,
+  text     text not null,
+  at       timestamptz default now()
+);
+alter table public.event_rsvps enable row level security;
+alter table public.messages    enable row level security;
+create policy "team reads rsvps"  on public.event_rsvps for select to authenticated using (true);
+create policy "team writes rsvps" on public.event_rsvps for all    to authenticated using (true) with check (true);
+create policy "team reads msgs"   on public.messages    for select to authenticated using (true);
+create policy "team writes msgs"  on public.messages    for insert to authenticated with check (true);
 
 -- ============================================================
 -- AFTER THE EVENT — data purge (run when follow-up is done):

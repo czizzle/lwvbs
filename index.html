@@ -143,6 +143,16 @@
   .accbody{padding:8px 0 2px}
   .accbody .kid{margin-bottom:8px}
 
+  /* Director "see what they see" preview bar */
+  .previewbar{position:sticky;top:0;z-index:19;background:#7e3ea8;color:#fff;text-align:center;
+    padding:9px 14px;font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .previewbar b{font-weight:800}
+  .previewbar .x{background:rgba(255,255,255,.22);border-radius:8px;padding:2px 8px;font-size:12.5px;white-space:nowrap}
+  .rolerow{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+  .rolerow.sel{border-color:var(--primary);background:#f2fbf5}
+  .rolerow .em{font-size:22px}
+
   /* Internal team chat */
   .chatwrap{display:flex;flex-direction:column;gap:9px;padding-bottom:8px}
   .msg{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:9px 13px;box-shadow:var(--shadow);max-width:90%;align-self:flex-start}
@@ -387,12 +397,19 @@ const CAPS = {
   crew:      VIEW_BASE.slice(),
   volunteer: VIEW_BASE.slice()
 };
-function currentRoleKey(){
+// The signed-in person's REAL role (ignores any preview).
+function realRoleKey(){
   if(LIVE && state.currentUser){
     const v=(DATA.volunteers||[]).find(x=>(x.email||"").toLowerCase()===String(state.currentUser).toLowerCase());
     return (v&&v.roleKey) || "volunteer";
   }
   return state.currentRole || "director";
+}
+// Only real directors/assistants may preview other people's views.
+function canPreview(){ const k=realRoleKey(); return k==="director"||k==="asst"; }
+function currentRoleKey(){
+  if(state.previewAs && canPreview()) return state.previewAs.roleKey;
+  return realRoleKey();
 }
 function can(cap){
   const caps = CAPS[currentRoleKey()] || [];
@@ -408,7 +425,7 @@ let state = {
   selChild:null, selGuardian:null, editChild:null, currentUser:null,
   pickReturn:"home", statKind:null,
   fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false,
-  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:""
+  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:"", previewAs:null
 };
 let authed = false;
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
@@ -929,6 +946,9 @@ function guard(cap,view){ if(cap && !can(cap)){ renderNoAccess(view); return fal
 const app=document.getElementById("app");
 
 function topbar(title,sub,showBack,showDay){
+  const pv = state.previewAs
+    ? `<div class="previewbar" data-act="exitPreview">👁 Seeing what <b>${esc(state.previewAs.name)}</b> sees (${esc(state.previewAs.role||ROLE_LABEL(state.previewAs.roleKey))})<span class="x">✕ Exit</span></div>`
+    : "";
   return `<div class="topbar">
     <div class="row">
       ${showBack?`<button class="backbtn" data-act="back">‹</button>`:`<img class="topmark" src="assets/rainforest-falls.png" alt="">`}
@@ -938,7 +958,7 @@ function topbar(title,sub,showBack,showDay){
       </div>
       ${showDay?`<button class="daybadge" data-act="pickday">${dayShort(state.day)} ▾</button>`:``}
     </div>
-  </div>`;
+  </div>${pv}`;
 }
 function renderNoAccess(view){
   app.innerHTML = topbar("Not available","",true,false) + `
@@ -977,6 +997,8 @@ function render(){
   if(v==="volunteers") return can("volunteersView")?renderVolunteers():renderNoAccess("Volunteers");
   if(v==="flags") return isDirector()?renderFlags():renderNoAccess("Review");
   if(v==="rolepick") return renderRolePicker();
+  if(v==="previewpick") return canPreview()?renderPreviewPick():renderNoAccess("Preview");
+  if(v==="crewList") return renderCrewList();
   if(v==="pickday") return renderPickDay();
   if(v==="info") return renderInfo();
   renderHome();
@@ -1012,11 +1034,10 @@ function myEvents(){ const dated=CONFIG.eventCalendar.filter(e=>e.date); return 
 
 /* ---------- grouping / accordion engine ---------- */
 const GROUPERS = {
-  crew:  {label:"Crew",  key:c=>c.crew||"— No crew —", order:[...CONFIG.crews], swatch:k=>CONFIG.crewColors[k]||""},
-  grade: {label:"Grade", key:c=>c.grade||"(none)", order:[...GRADE_ORDER], fmt:g=>g==="(none)"?"— No grade —":gradeLabel(g)},
-  room:  {label:"CDC room", key:c=>childRoom(c)||"— No room —", order:null},
+  none:  {label:"All kids", key:c=>"All kids", order:["All kids"]},
   type:  {label:"CDC / Community", key:c=>c.attendsCDC?"CDC kids":"Community kids", order:["CDC kids","Community kids"]},
-  none:  {label:"No grouping", key:c=>"Everyone", order:["Everyone"]}
+  room:  {label:"CDC room", key:c=>childRoom(c)||"— No room —", order:null},
+  crew:  {label:"Crew",  key:c=>c.crew||"— No crew —", order:[...CONFIG.crews], swatch:k=>CONFIG.crewColors[k]||""}
 };
 function ACCESS_LABEL(k){ return (k==="director"||k==="asst"||k==="pastor")?"Full access":k==="checkin"?"Check-in / out":"View only"; }
 const VGROUPERS = {
@@ -1034,7 +1055,6 @@ function inkFor(hex){ if(!hex||hex[0]!=="#"||hex.length<7) return "#fff";
   return (0.299*r+0.587*g+0.114*b)>150?"#20301c":"#fff"; }
 function noneKey(k){ return !k || k[0]==="—" || k==="(none)"; }
 GROUPERS.crew.color  = k=>CONFIG.crewColors[k]||"";
-GROUPERS.grade.color = k=>GRADE_COLORS[k]||"";
 GROUPERS.room.color  = k=>noneKey(k)?"":HUE_PALETTE[hashIdx(k,HUE_PALETTE.length)];
 GROUPERS.type.color  = k=>k==="CDC kids"?"#c78f1e":"#2f6fb0";
 GROUPERS.none.color  = ()=>"";
@@ -1047,7 +1067,7 @@ function childSortCmp(a,b){ const s=state.sortBy._child||"last";
   return (a.last||"").localeCompare(b.last||"")||(a.first||"").localeCompare(b.first||""); }
 function volNameCmp(a,b){ return (a.name||"").toLowerCase().localeCompare((b.name||"").toLowerCase()); }
 function sortFor(kind){ return kind==="vol"?volNameCmp:childSortCmp; }
-function defaultChildGroup(){ return DATA.children.filter(c=>c.crew).length>DATA.children.length/2?"crew":"grade"; }
+function defaultChildGroup(){ return DATA.children.filter(c=>c.crew).length>DATA.children.length/2?"crew":"none"; }
 function curGroupBy(pg,dflt){ return state.groupBy[pg]||dflt; }
 function isGroupOpen(pg,k){
   if((state.search||"").trim()) return true;
@@ -1122,8 +1142,8 @@ function renderHome(){
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
     const total=kids.filter(c=>c.crew===cr).length;
-    return `<div class="crewline"><span class="dot" style="background:${CONFIG.crewColors[cr]||'#999'}"></span>
-      <span class="name">${esc(cr)}</span><span class="cnt">${present} of ${total} here</span></div>`;
+    return `<div class="crewline" data-act="crewList" data-crew="${esc(cr)}" style="cursor:pointer"><span class="dot" style="background:${CONFIG.crewColors[cr]||'#999'}"></span>
+      <span class="name">${esc(cr)}</span><span class="cnt">${present} of ${total} here</span><span class="chev">›</span></div>`;
   }).join("");
 
   const roleChip = LIVE ? "" :
@@ -1160,6 +1180,14 @@ function renderHome(){
     </div>`;
 }
 
+function renderCrewList(){
+  const cr=state.crewView, day=state.day;
+  const list=sortedChildren().filter(c=>c.crew===cr);
+  const here=list.filter(c=>statusOf(c,day).code==="in").length;
+  const rows=list.map(c=>childRow(c,"child")).join("") || `<div class="empty">No kids assigned to ${esc(cr)} crew yet.</div>`;
+  app.innerHTML = topbar(esc(cr)+" crew", dayName(day)+" · "+here+" of "+list.length+" here", true, true) + `
+    <div class="content"><div class="list">${rows}</div></div>`;
+}
 function renderStatList(){
   const day=state.day, kind=state.statKind||"in";
   let list, title;
@@ -1185,14 +1213,10 @@ function childRow(c,act){
 
 function filterBar(opts){
   opts=opts||{};
-  const crewOpts=[...CONFIG.crews].sort((a,b)=>a.localeCompare(b)).map(cr=>`<option value="${cr}" ${state.fCrew===cr?"selected":""}>${cr}</option>`).join("");
-  const rooms=distinctRooms();
-  const roomOpts=rooms.map(r=>`<option value="${esc(r)}" ${state.fRoom===r?"selected":""}>${esc(r)}</option>`).join("");
-  return `<div class="filters">
-    <select data-filter="fCrew"><option value="">All crews</option>${crewOpts}</select>
-    ${rooms.length?`<select data-filter="fRoom"><option value="">All CDC rooms</option>${roomOpts}</select>`:""}
-    ${opts.community?`<label class="toggle"><input type="checkbox" data-toggle="fCommunity" ${state.fCommunity?"checked":""}>Community kids only</label>`:""}
-  </div>`;
+  // Crew/room filters removed (Todd's feedback) — grouping replaces them. Only the
+  // check-out "community only" toggle remains (VBS volunteers check out community kids).
+  if(!opts.community) return "";
+  return `<div class="filters"><label class="toggle"><input type="checkbox" data-toggle="fCommunity" ${state.fCommunity?"checked":""}>Community kids only</label></div>`;
 }
 
 function renderCheckList(mode){
@@ -1216,7 +1240,7 @@ function renderCheckList(mode){
       ${mode==='in'?'<span class="chev">＋</span>':'<span class="status in">Tap to check out</span>'}
     </div>`;
   };
-  const dflt=defaultChildGroup();
+  const dflt="none";
   const pg=mode==='in'?"checkin":"checkout";
   const dayCtl = locked
     ? `<span class="lock">📆 Today only — ${dayName(realToday())}</span>`
@@ -1651,6 +1675,20 @@ function renderImport(){
       <div id="imp_out"></div>
     </div>`;
 }
+function renderPreviewPick(){
+  const vols=volsByFirst(DATA.volunteers);
+  const rows=vols.map(v=>`<div class="rolerow ${state.previewAs&&state.previewAs.id===v.id?'sel':''}" data-act="setPreview" data-id="${v.id}">
+    <span class="em">${ROLE_EM(v.roleKey)}</span>
+    <div style="flex:1"><div style="font-weight:700">${esc(v.name)}</div>
+      <div class="mini">${esc(v.role||ROLE_LABEL(v.roleKey))} · 🔑 ${esc(ACCESS_LABEL(v.roleKey))}</div></div>
+    ${state.previewAs&&state.previewAs.id===v.id?'<span style="color:var(--primary);font-weight:800">✓</span>':'<span class="chev">›</span>'}
+  </div>`).join("");
+  app.innerHTML = topbar("See what they see","Preview any volunteer's view",true,false) + `
+    <div class="content">
+      <div class="banner">Tap anyone to see the app exactly as they do — their menu, their screens, what they can and can't touch. You stay signed in as yourself; this is just a look. The purple bar up top exits the preview.</div>
+      ${rows}
+    </div>`;
+}
 function renderRolePicker(){
   const rows=ROLE_DEFS.map(r=>`<div class="rolerow ${currentRoleKey()===r.key?'sel':''}" data-act="setRole" data-role="${r.key}">
     <span class="em">${r.em}</span>
@@ -1775,6 +1813,7 @@ function renderInfo(){
         <h3>Mode: ${LIVE?"🟢 Live (synced)":(state.realLoaded?"🔒 Real roster (this phone only)":"🧪 Demo (this phone only)")}</h3>
         <p>${LIVE?"Check-ins sync across every volunteer's phone in real time.":(state.realLoaded?"Real children and volunteers are loaded on this device only. Nothing syncs to other phones yet — that happens when we switch on live sync.":"You're testing with sample kids. Nothing here is saved to the cloud, and it won't show up on other phones. When you're happy with how it works, we switch on live sync.")}</p>
       </div>
+      ${canPreview()?`<div class="panel"><h3>👁 See what a volunteer sees</h3><p>Look through any team member's eyes — their menu, their screens, what they can and can't touch. You stay signed in as yourself.</p><button class="btn ghost no-print" data-act="previewpick">👁 Preview a volunteer's view</button></div>`:""}
       ${isDirector()?`<div class="panel"><h3>⚠️ Review report ${DATA.children.filter(c=>activeFlags(c).length).length?`(${DATA.children.filter(c=>activeFlags(c).length).length} to review)`:""}</h3><p>Registrations that tripped a data check — duplicates, kids under 4, missing grade or phone. Confirm or act on each.</p><button class="btn ghost no-print" data-act="flags">⚠️ Open the report for Todd</button></div>`:""}
       ${(!LIVE&&window.__VBS_REAL_ROSTER)?`<div class="panel"><h3>Load the real roster</h3><p>Bring in the ${window.__VBS_REAL_ROSTER.summary.children} real children and ${window.__VBS_REAL_ROSTER.summary.volunteers} volunteers from the Google Forms (this device only). Replaces the sample kids.</p><button class="btn ghost no-print" data-act="loadReal">📥 Load real VBS roster</button></div>`:""}
       ${LIVE?"":`<div class="panel">
@@ -2114,6 +2153,15 @@ app.addEventListener("click",async e=>{
     case "flags": go("flags"); break;
     case "chat": go("chat"); break;
     case "rolepick": go("rolepick"); break;
+    case "previewpick": go("previewpick"); break;
+    case "setPreview": {
+      if(!canPreview()){ toast("Only the director can preview"); break; }
+      const v=DATA.volunteers.find(x=>x.id===id); if(!v) break;
+      state.previewAs={id:v.id,name:v.name,roleKey:v.roleKey,role:v.role};
+      go("home"); toast("👁 Now seeing what "+v.name+" sees");
+      break;
+    }
+    case "exitPreview": { state.previewAs=null; go("home"); toast("Back to your own view"); break; }
 
     case "toggleGroup": {
       const pg=el.getAttribute("data-pg"), g=el.getAttribute("data-g"), key=pg+"|"+g;
@@ -2145,6 +2193,7 @@ app.addEventListener("click",async e=>{
     case "pickday": go("pickday",{pickReturn:state.view}); break;
     case "chooseDay": state.day=el.getAttribute("data-d"); go(state.pickReturn||"home"); break;
     case "statList": go("statList",{statKind:el.getAttribute("data-kind")}); break;
+    case "crewList": go("crewList",{crewView:el.getAttribute("data-crew")}); break;
     case "child": go("child",{selChild:id}); break;
     case "consent": go("consent",{selChild:id||state.selChild}); break;
 
@@ -2346,6 +2395,7 @@ function prevView(){
   if(v==="reports") return "roster";
   if(v==="scheduleLoc") return "schedule";
   if(v==="statList") return "home";
+  if(v==="crewList") return "home";
   if(v==="flags") return "home";
   if(v==="chat") return "home";
   if(v==="checkoutConfirm") return "checkout";

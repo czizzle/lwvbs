@@ -1003,6 +1003,7 @@ function render(){
   if(v==="rolepick") return renderRolePicker();
   if(v==="previewpick") return canPreview()?renderPreviewPick():renderNoAccess("Preview");
   if(v==="crewList") return renderCrewList();
+  if(v==="myday") return renderMyDay();
   if(v==="pickday") return renderPickDay();
   if(v==="info") return renderInfo();
   renderHome();
@@ -1035,6 +1036,23 @@ function rsvpOf(eventId){ return (DATA.rsvps[eventId]||{})[meKey()]||""; }
 function rsvpCounts(eventId){ const m=DATA.rsvps[eventId]||{}, c={going:0,maybe:0,no:0}; Object.values(m).forEach(s=>{ if(c[s]!=null)c[s]++; }); return c; }
 function rsvpNames(eventId,status){ const m=DATA.rsvps[eventId]||{}; return Object.keys(m).filter(k=>m[k]===status).map(volDisplay).sort((a,b)=>a.localeCompare(b)); }
 function myEvents(){ const dated=CONFIG.eventCalendar.filter(e=>e.date); return dated.filter(e=>["going","maybe"].includes(rsvpOf(e.id))); }
+
+/* ---------- live rotation: where is a crew / kid right now ---------- */
+function nowMins(){ const n=new Date(); return n.getHours()*60+n.getMinutes(); }
+function slotRange(s){ const m=(s.time||"").match(/(\d{1,2}):(\d{2}).*?(\d{1,2}):(\d{2})/); return m?[(+m[1])*60+(+m[2]),(+m[3])*60+(+m[4])]:null; }
+function currentSlot(){ const mins=nowMins(); for(const s of CONFIG.schedule){ const r=slotRange(s); if(r&&mins>=r[0]&&mins<r[1]) return s; } return null; }
+function stationForCrewAt(slot,crew){ if(!slot) return null; if(slot.all) return slot.station; return (slot.assign&&slot.assign[crew])||null; }
+function whereIsNow(child){
+  const slot=currentSlot();
+  if(!slot) return {inSession:false};
+  if(!child.crew) return {inSession:true, needCrew:true};
+  return {inSession:true, station:stationForCrewAt(slot,child.crew), slot};
+}
+// A station leader's rotation station, from their job title.
+const JOB_STATION={"bible leader":"Rooted Bible Adventures","games leader":"Wild Games","craft leader":"Crafts","sticky scriptures leader":"Sticky Scripture","sticky scripture leader":"Sticky Scripture","snacks leader":"Treetop Treats","snack leader":"Treetop Treats"};
+// The volunteer whose view is active (the previewed person, or the signed-in user).
+function myVolForView(){ if(state.previewAs && canPreview()) return (DATA.volunteers||[]).find(v=>v.id===state.previewAs.id)||null; return meVol(); }
+function myStation(){ const v=myVolForView(); return v?(JOB_STATION[(v.role||"").toLowerCase()]||null):null; }
 
 /* ---------- grouping / accordion engine ---------- */
 const GROUPERS = {
@@ -1142,6 +1160,9 @@ function renderHome(){
   const reviewTile=(isDirector()&&nReview>0)
     ? `<div class="act wide" data-act="flags" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00"><span class="ico">⚠️</span>Review ${nReview} registration${nReview>1?"s":""} — report for Todd</div>`
     : "";
+  const myDayTile=myStation()
+    ? `<div class="act wide" data-act="myday" style="background:#eef4ff;border-color:#c9dcea;color:#1a344e"><span class="ico">🗓️</span>My day — ${esc(myStation())}</div>`
+    : "";
 
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
@@ -1171,7 +1192,7 @@ function renderHome(){
       ${helperBar()}
 
       <h2 class="sect">Do something</h2>
-      <div class="actions">${reviewTile}${actionsHtml}</div>
+      <div class="actions">${reviewTile}${myDayTile}${actionsHtml}</div>
 
       ${can("dashboard")?statsBlock:""}
 
@@ -1373,6 +1394,10 @@ function renderChild(){
         <div class="field"><div class="k">Status today (${dayShort(state.day)})</div>
           <div class="v">${st.code==="in"?`✅ Checked in at ${fmtTime(st.rec.inAt)}`:st.code==="out"?`👋 Out at ${fmtTime(st.rec.outAt)} to ${esc(st.rec.releasedTo||"—")}`:"⏳ Not arrived"}</div></div>
         <div class="field"><div class="k">Crew / type</div><div class="v">${esc(c.crew)} crew · ${isCommunity(c)?"🔵 Community child (signed pickup required)":"🧸 CDC child"+(childRoom(c)?" · "+esc(childRoom(c)):"")}</div></div>
+        ${(()=>{const w=whereIsNow(c);
+          if(!w.inSession) return `<div class="field"><div class="k">🕐 Right now</div><div class="v" style="color:var(--muted)">Shows ${esc(c.first)}'s current station live during VBS (9:00–11:30).</div></div>`;
+          if(w.needCrew) return `<div class="field"><div class="k">🕐 Right now</div><div class="v" style="color:var(--muted)">Assign a crew to track ${esc(c.first)}'s station.</div></div>`;
+          return `<div class="field"><div class="k">🕐 Right now</div><div class="v" style="font-weight:700;color:var(--primary)">${esc(w.station||'—')}${w.station&&locFor(w.station)?' · '+esc(locFor(w.station)):''} <span class="mini" style="font-weight:400">(${esc(w.slot.time)})</span></div></div>`;})()}
         <div class="field"><div class="k">Grade / age / gender</div><div class="v">${esc(gradeLabel(c.grade))}${ageFrom(c.dob)?" · "+ageFrom(c.dob):""}${c.gender?" · "+esc(c.gender):""}</div></div>
         <div class="field"><div class="k">Days attending</div><div class="v">${esc(days)}</div></div>
         ${c.allergies?`<div class="field"><div class="k">⚠️ Allergies</div><div class="v warn">${esc(c.allergies)}</div></div>`:""}
@@ -1508,6 +1533,28 @@ function renderVolunteers(){
   focusSearch();
 }
 
+function renderMyDay(){
+  const st=myStation();
+  if(!st){ app.innerHTML=topbar("My day","",true,false)+`
+    <div class="content"><div class="banner">Your role doesn't run a rotation station, so there's no personal rotation to show. This view is for Bible, Games, Crafts, Sticky Scripture, and Snacks leaders.</div></div>`; return; }
+  const anyCrews=DATA.children.filter(c=>c.crew).length>0;
+  const rows=CONFIG.schedule.map(s=>{
+    if(s.all){ return s.station===st?`<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")} — everyone's with you</div></div>`:""; }
+    const crews=CONFIG.crews.filter(cr=>s.assign&&s.assign[cr]===st);
+    if(!crews.length) return "";
+    const body=crews.map(cr=>{
+      const kids=sortedChildren().filter(c=>c.crew===cr);
+      const kidLinks=kids.map(k=>`<a class="link" data-act="child" data-id="${k.id}">${esc(k.first)} ${esc((k.last[0]||""))}.</a> <span class="mini">${esc(/^K/.test(k.grade)?k.grade:"Gr "+k.grade)}</span>`).join(" · ");
+      return `<div style="margin-top:8px"><span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${CONFIG.crewColors[cr]||'#999'}"></span> <a class="link" data-act="crewList" data-crew="${esc(cr)}"><b>${esc(cr)} crew</b></a> (${kids.length} kids)${kids.length?`<div style="margin-top:3px;line-height:1.9">${kidLinks}</div>`:""}</div>`;
+    }).join("");
+    return `<div class="slot"><div class="t">🕐 ${esc(s.time)} · ${esc(s.label||"")}</div>${body}</div>`;
+  }).join("");
+  app.innerHTML = topbar("My day", st, true, true)+`
+    <div class="content">
+      <div class="banner">Your station: <b>${esc(st)}</b>${locFor(st)?` (${esc(locFor(st))})`:""}. Here's who rotates to you and when — tap any name or crew for details.</div>
+      ${anyCrews?rows:`<div class="empty">Crews aren't assigned yet. Once the director sets crews, you'll see each crew's kids here, in the order they come to you.</div>`}
+    </div>`;
+}
 function renderSchedule(){
   const legend = CONFIG.stations.map(s=>{const l=locFor(s);return `<span class="gchip"><b>${esc(s)}</b>${l?` <span class="arw">→</span> <span class="locbadge">${esc(l)}</span>`:` <span class="mini">location TBD</span>`}</span>`;}).join("");
   const rows=CONFIG.schedule.map(s=>{
@@ -2199,6 +2246,7 @@ app.addEventListener("click",async e=>{
     case "chooseDay": state.day=el.getAttribute("data-d"); go(state.pickReturn||"home"); break;
     case "statList": go("statList",{statKind:el.getAttribute("data-kind")}); break;
     case "crewList": go("crewList",{crewView:el.getAttribute("data-crew")}); break;
+    case "myday": go("myday"); break;
     case "child": go("child",{selChild:id}); break;
     case "consent": go("consent",{selChild:id||state.selChild}); break;
 
@@ -2401,6 +2449,7 @@ function prevView(){
   if(v==="scheduleLoc") return "schedule";
   if(v==="statList") return "home";
   if(v==="crewList") return "home";
+  if(v==="myday") return "home";
   if(v==="flags") return "home";
   if(v==="chat") return "home";
   if(v==="checkoutConfirm") return "checkout";

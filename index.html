@@ -51,7 +51,7 @@
 
   /* Stat grid */
   .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);cursor:pointer}
   .stat .n{font-size:34px;font-weight:800;line-height:1}
   .stat .l{font-size:13px;color:var(--muted);margin-top:6px;font-weight:600}
   .stat.green .n{color:var(--green)} .stat.slate .n{color:var(--slate)}
@@ -173,8 +173,34 @@
   .info code{background:#eef2f6;padding:2px 6px;border-radius:6px;font-size:14px}
   a.link{color:var(--primary);font-weight:600;text-decoration:none}
 
+  /* v2 additions: roles, filters, dots, announcements, import */
+  .rolechip{display:inline-flex;align-items:center;gap:6px;background:var(--primary);color:#fff;border:0;
+    border-radius:20px;padding:7px 14px;font-size:12.5px;font-weight:700;margin-top:8px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.14)}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .filters select{font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-weight:600;color:var(--ink)}
+  .toggle{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;background:var(--card);
+    border:1px solid var(--line);border-radius:12px;padding:8px 12px;cursor:pointer}
+  .toggle input{width:20px;height:20px}
+  .dotset{display:inline-flex;gap:4px;margin-left:2px;vertical-align:middle}
+  .ndot{width:12px;height:12px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.18)}
+  .ndot.red{background:#e23b3b}.ndot.blue{background:#2f6fb0}.ndot.yellow{background:#e7c02a}
+  .ann{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--gold);border-radius:14px;
+    padding:13px 15px;margin-bottom:10px;box-shadow:var(--shadow)}
+  .ann .txt{font-size:16px;white-space:pre-wrap;line-height:1.5}
+  .ann .who{font-size:12.5px;color:var(--muted);margin-top:7px}
+  .ann img{max-width:100%;border-radius:10px;margin-top:8px}
+  .rolerow{display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--line);border-radius:14px;
+    margin-bottom:8px;cursor:pointer;background:var(--card)}
+  .rolerow.sel{border-color:var(--primary);background:#eef7fa}
+  .rolerow .em{font-size:24px}
+  .mini{font-size:13px;color:var(--muted)}
+  .pill{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:var(--slate-bg);color:var(--slate);margin-left:6px}
+  .locbadge{color:var(--teal);font-weight:700}
+  .statgrid3{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+  .lock{background:var(--green-bg);border:1px solid #c3e6cf;color:#0b5c2e;border-radius:10px;padding:6px 10px;font-size:12.5px;font-weight:700;display:inline-block}
+
   @media print{
-    .topbar,.helper,.actions,.search,.no-print{display:none!important}
+    .topbar,.helper,.actions,.search,.filters,.no-print{display:none!important}
     body{background:#fff;font-size:12px}
     #app{max-width:none}
   }
@@ -186,7 +212,7 @@
 
 <script>
 /* ============================================================
-   Living Word Lutheran VBS — Check-In App
+   Living Word Lutheran VBS — Check-In App  (v2)
    Single-file. Demo mode works offline with no accounts.
    To go LIVE (real multi-phone sync), paste your Supabase
    URL + anon key in CONFIG below and run schema.sql once.
@@ -198,14 +224,21 @@ const CONFIG = {
   tagline:   "Exploring the Nature of God",
   church:    "Living Word Lutheran Church",
   dates:     ["2026-08-03","2026-08-04","2026-08-05","2026-08-06"],
-  // Living Word's 8 real color crews, grouped by grade band: Blue/Green=K4, Orange/Pink=K5-1st, Purple/Red=1st-2nd, Silver/Yellow=3rd-5th.
   crews:     ["Blue","Green","Orange","Pink","Purple","Red","Silver","Yellow"],
   crewColors:{Blue:"#2f6fb0",Green:"#3d8b40",Orange:"#e07b2e",Pink:"#d6417f",Purple:"#7e3ea8",Red:"#c0392b",Silver:"#8f979f",Yellow:"#e0a72e"},
-  // 4 rotation stations (Rainforest Falls names). Opening/snack/closing are all-together blocks (see buildRealSchedule).
   stations: ["Rooted Bible Adventures","Sticky Scripture","Wild Games","Crafts"],
-  // Sample rotation — auto-built from groups × stations (see buildSampleSchedule). Replaced when the real schedule is loaded.
+  // Locations Todd gave (Opening=sanctuary, Wild Games=outside back, Sticky Scripture=conference room).
+  // Blanks are marked TBD in the UI so Todd can confirm the rest.
+  stationLocations: {
+    "Sing & Play Tune Lagoon":"Sanctuary",
+    "Rooted Bible Adventures":"",
+    "Sticky Scripture":"Conference room",
+    "Wild Games":"Outside (back)",
+    "Crafts":"",
+    "Treetop Treats":"",
+    "Canopy Closing":"Sanctuary"
+  },
   schedule: [],
-  // Whole-event timeline (from Todd's deck, slide 7).
   eventCalendar: [
     {date:"2026-07-18", time:"9:00–11:30 am", title:"Decorations prep", location:"Kloehn barn"},
     {date:"2026-07-31", time:"5:30–8:00 pm", title:"Setup"},
@@ -227,87 +260,171 @@ const CONFIG = {
 const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
 
-// Real daily rotation: 4 rotation stations, 2 crews each (grade-band pairs), + all-together
-// opening/snack/closing. Times from the deck; crew start positions can be fine-tuned by Todd.
 function buildRealSchedule(groups, stations){
   const n = stations.length;
   const rot = ri => { const a={}; groups.forEach((grp,i)=>{ a[grp]=stations[(Math.floor(i/2)+ri)%n]; }); return a; };
   return [
-    {time:"9:00–9:15",   all:true, label:"Sing & Play Tune Lagoon — Opening (everyone)"},
+    {time:"9:00–9:15",   all:true, station:"Sing & Play Tune Lagoon", label:"Sing & Play Tune Lagoon — Opening (everyone)"},
     {time:"9:18–9:38",   label:"Rotation 1", assign:rot(0)},
     {time:"9:41–10:01",  label:"Rotation 2", assign:rot(1)},
-    {time:"10:04–10:24", all:true, label:"Treetop Treats — Snack (all crews together)"},
+    {time:"10:04–10:24", all:true, station:"Treetop Treats", label:"Treetop Treats — Snack (all crews together)"},
     {time:"10:27–10:47", label:"Rotation 3", assign:rot(2)},
     {time:"10:50–11:10", label:"Rotation 4", assign:rot(3)},
-    {time:"11:13–11:30", all:true, label:"Canopy Closing (all crews)"}
+    {time:"11:13–11:30", all:true, station:"Canopy Closing", label:"Canopy Closing (all crews)"}
   ];
 }
 CONFIG.schedule = buildRealSchedule(CONFIG.crews, CONFIG.stations);
 
+/* ============================================================
+   ROLES + PERMISSIONS (app-layer; live derives role from login)
+   Every "accessible to X / editable by Y" note in Todd's doc
+   maps to a capability here. Demo mode has a role switcher so
+   Todd can preview exactly what each person sees.
+   ============================================================ */
+const ROLE_DEFS = [
+  {key:"director",  label:"Director",              em:"⭐", note:"Full access to everything"},
+  {key:"asst",      label:"Assistant Director",    em:"🌟", note:"Full access to everything"},
+  {key:"checkin",   label:"Check-in / Check-out",  em:"✅", note:"Check kids in & out, edit & add children"},
+  {key:"snack",     label:"Snack Team",            em:"🍎", note:"Snack counts, allergies, roster"},
+  {key:"cdc",       label:"CDC Teacher",           em:"🧸", note:"Check in by room, allergies, roster"},
+  {key:"pastor",    label:"Pastor",                em:"✝️", note:"Schedule & calendar, roster, view all"},
+  {key:"station",   label:"Station Lead",          em:"🎯", note:"Roster, schedule, allergies"},
+  {key:"crew",      label:"Crew Assistant",        em:"👥", note:"Allergies, schedule, calendar"},
+  {key:"volunteer", label:"Volunteer",             em:"🙌", note:"Schedule, calendar, announcements"}
+];
+const ROLE_LABEL = k => (ROLE_DEFS.find(r=>r.key===k)||{}).label || "Volunteer";
+const ROLE_EM = k => (ROLE_DEFS.find(r=>r.key===k)||{}).em || "🙌";
+
+// Capabilities per role. "*" = everything (director & asst dirs).
+const CAPS = {
+  director:  ["*"],
+  asst:      ["*"],
+  checkin:   ["checkin","checkout","undoCheckin","addPickup","roster","addChild","editChild","allergiesView","snackView","schedule","calendar","announce","announcePost","volunteersView"],
+  snack:     ["snackView","snackEdit","allergiesView","roster","schedule","calendar","announce","announcePost","volunteersView"],
+  cdc:       ["checkin","checkout","undoCheckin","addPickup","roster","allergiesView","editAllergies","snackView","schedule","calendar","announce","announcePost","volunteersView"],
+  pastor:    ["dashboard","roster","schedule","scheduleEdit","calendar","calendarEdit","allergiesView","snackView","announce","announcePost","volunteersView"],
+  station:   ["roster","schedule","allergiesView","calendar","announce","announcePost","volunteersView"],
+  crew:      ["allergiesView","schedule","calendar","announce","announcePost","volunteersView"],
+  volunteer: ["schedule","calendar","announce","announcePost","volunteersView"]
+};
+function currentRoleKey(){
+  if(LIVE && state.currentUser){
+    const v=(DATA.volunteers||[]).find(x=>(x.email||"").toLowerCase()===String(state.currentUser).toLowerCase());
+    return (v&&v.roleKey) || "volunteer";
+  }
+  return state.currentRole || "director";
+}
+function can(cap){
+  const caps = CAPS[currentRoleKey()] || [];
+  return caps.includes("*") || caps.includes(cap);
+}
+
 /* ---------- in-memory cache the UI renders from ---------- */
-const DATA = { children:[], volunteers:[], attendance:{}, activity:[] };
+const DATA = { children:[], volunteers:[], attendance:{}, activity:[], announcements:[], scheduleLoc:{} };
 let state = {
   view:"home", day:defaultDay(), search:"",
   currentVolunteer: localStorage.getItem("vbs_vol") || "",
-  selChild:null, selGuardian:null, editChild:null, currentUser:null
+  currentRole: localStorage.getItem("vbs_role") || "director",
+  selChild:null, selGuardian:null, editChild:null, currentUser:null,
+  pickReturn:"home", statKind:null,
+  fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false
 };
 let authed = false;
-// Who is acting: the signed-in account (live) wins; falls back to the on-duty helper.
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
 
 function defaultDay(){
   const today = new Date().toISOString().slice(0,10);
   return CONFIG.dates.includes(today) ? today : CONFIG.dates[0];
 }
+function realToday(){ return new Date().toISOString().slice(0,10); }
+function todayIsEventDay(){ return CONFIG.dates.includes(realToday()); }
 function nowISO(){ return new Date().toISOString(); }
 function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4); }
-
 /* ============================================================
    DATA LAYER  (demo <-> supabase share one interface)
+   Model: children carry an embedded `parent` block + `familyId`
+   so parent/photo/emergency/pickup info is entered ONCE per
+   family and applies to all their kids (as Todd asked).
    ============================================================ */
-const DEMO_KEY = "vbs_demo_v5";
+const DEMO_KEY = "vbs_demo_v6";
 
 function seedDemo(){
-  const g=(name,phone,rel,pick=true)=>({name,phone,relationship:rel,canPickup:pick});
-  const kids=[
-    {first:"Emma",last:"Bauer",grade:"K4",crew:"Blue",community:true,allergies:"Peanuts (severe)",medical:"",photoConsent:true,
-      guardians:[g("Sarah Bauer","262-555-0111","Mother"),g("Tom Bauer","262-555-0112","Father")],
-      emergency:g("Linda Voss","262-555-0199","Grandmother")},
-    {first:"Liam",last:"Schmidt",grade:"K5",crew:"Orange",allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Karen Schmidt","262-555-0121","Mother")],emergency:g("Paul Schmidt","262-555-0122","Uncle")},
-    {first:"Olivia",last:"Meyer",grade:"4",crew:"Silver",allergies:"",medical:"Asthma — inhaler in backpack",photoConsent:false,
-      guardians:[g("Ruth Meyer","262-555-0131","Mother"),g("Dan Meyer","262-555-0132","Father")],emergency:g("Ruth Meyer","262-555-0131","Mother")},
-    {first:"Noah",last:"Wagner",grade:"1",crew:"Pink",community:true,allergies:"Bee stings — EpiPen in bag",medical:"",photoConsent:true,
-      guardians:[g("Amy Wagner","262-555-0141","Mother")],emergency:g("Greg Wagner","262-555-0142","Father")},
-    {first:"Ava",last:"Fischer",grade:"2",crew:"Purple",allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Beth Fischer","262-555-0151","Mother"),g("Mark Fischer","262-555-0152","Father")],emergency:g("Beth Fischer","262-555-0151","Mother")},
-    {first:"Mason",last:"Weber",grade:"5",crew:"Silver",community:true,allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Julie Weber","262-555-0161","Mother")],emergency:g("Steve Weber","262-555-0162","Father")},
-    {first:"Sophia",last:"Becker",grade:"1",crew:"Pink",allergies:"Dairy",medical:"",photoConsent:false,
-      guardians:[g("Nina Becker","262-555-0171","Mother"),g("Grandma Rose","262-555-0173","Grandmother")],emergency:g("Nina Becker","262-555-0171","Mother")},
-    {first:"Lucas",last:"Hoffmann",grade:"2",crew:"Purple",community:true,allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Kate Hoffmann","262-555-0181","Mother")],emergency:g("Joe Hoffmann","262-555-0182","Father")},
-    {first:"Mia",last:"Keller",grade:"3",crew:"Yellow",allergies:"",medical:"Type 1 diabetic — see care plan in office",photoConsent:true,
-      guardians:[g("Dana Keller","262-555-0191","Mother"),g("Rob Keller","262-555-0192","Father")],emergency:g("Dana Keller","262-555-0191","Mother")},
-    {first:"Ethan",last:"Braun",grade:"4",crew:"Yellow",community:true,allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Lisa Braun","262-555-0201","Mother")],emergency:g("Tim Braun","262-555-0202","Father")},
-    {first:"Charlotte",last:"Vogel",grade:"1",crew:"Orange",allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Anne Vogel","262-555-0211","Mother"),g("Chris Vogel","262-555-0212","Father")],emergency:g("Anne Vogel","262-555-0211","Mother")},
-    {first:"Henry",last:"Zimmerman",grade:"5",crew:"Silver",allergies:"",medical:"",photoConsent:false,
-      guardians:[g("Meg Zimmerman","262-555-0221","Mother")],emergency:g("Dave Zimmerman","262-555-0222","Father")},
-    {first:"Amelia",last:"Krause",grade:"K4",crew:"Green",allergies:"",medical:"",photoConsent:true,
-      guardians:[g("Sara Krause","262-555-0231","Mother"),g("Grandpa Bill","262-555-0233","Grandfather")],emergency:g("Sara Krause","262-555-0231","Mother")},
-    {first:"Jack",last:"Schulz",grade:"2",crew:"Red",community:true,allergies:"Gluten (celiac)",medical:"",photoConsent:true,
-      guardians:[g("Erin Schulz","262-555-0241","Mother")],emergency:g("Nate Schulz","262-555-0242","Father")}
-  ].map(k=>({id:uid(),...k}));
+  // family(): shared parent block entered once per household
+  const fam=(o)=>({first:o.pf,last:o.pl,email:o.pe||"",phone:o.pp||"",altPhone:o.pa||"",
+    street:o.st||"",city:o.city||"Jackson",state:o.state||"WI",zip:o.zip||"",
+    photoConsent:o.photo!==false,
+    emergency:{name:o.en||"",relationship:o.er||"",phone:o.ep||""},
+    altPickup:{name:o.an||"",phone:o.ap||""}});
+  const mk=(o)=>({id:uid(),familyId:o.familyId,first:o.first,last:o.last,grade:o.grade,gender:o.gender||"",
+    dob:o.dob||"",crew:o.crew,attendsCDC:!!o.cdc,cdcRoom:o.room||"",community:o.cdc?false:true,
+    days:o.days||["Mon","Tue","Wed","Thu"],allergies:o.all||"",medical:o.med||"",comments:o.notes||"",
+    parent:o.parent,extraPickups:[],consent:null});
+
+  const families=[];
+  const kids=[];
+  function household(p, children){
+    const fid=uid(); const parent=fam(p); families.push({id:fid,...parent});
+    children.forEach(c=>kids.push(mk({familyId:fid,parent,...c})));
+  }
+
+  // Bauer — 2 siblings, community, shows shared-parent model
+  household({pf:"Sarah",pl:"Bauer",pe:"sarah.bauer@example.com",pp:"262-555-0111",pa:"262-555-0112",
+    en:"Linda Voss",er:"Grandmother",ep:"262-555-0199",an:"Tom Bauer",ap:"262-555-0112",photo:true},
+    [{first:"Emma",last:"Bauer",grade:"K4",gender:"F",crew:"Blue",all:"Peanuts (severe)"},
+     {first:"Owen",last:"Bauer",grade:"2",gender:"M",crew:"Purple",days:["Mon","Tue","Wed","Thu"]}]);
+
+  household({pf:"Karen",pl:"Schmidt",pe:"karen.schmidt@example.com",pp:"262-555-0121",
+    en:"Paul Schmidt",er:"Uncle",ep:"262-555-0122",an:"Paul Schmidt",ap:"262-555-0122"},
+    [{first:"Liam",last:"Schmidt",grade:"K5",gender:"M",crew:"Orange",cdc:true,room:"Room 3"}]);
+
+  household({pf:"Ruth",pl:"Meyer",pe:"ruth.meyer@example.com",pp:"262-555-0131",pa:"262-555-0132",
+    en:"Ruth Meyer",er:"Mother",ep:"262-555-0131",photo:false},
+    [{first:"Olivia",last:"Meyer",grade:"4",gender:"F",crew:"Silver",cdc:true,room:"Room 5",med:"Asthma — inhaler in backpack",days:["Mon","Tue","Wed","Thu"]}]);
+
+  household({pf:"Amy",pl:"Wagner",pe:"amy.wagner@example.com",pp:"262-555-0141",
+    en:"Greg Wagner",er:"Father",ep:"262-555-0142",an:"Greg Wagner",ap:"262-555-0142"},
+    [{first:"Noah",last:"Wagner",grade:"1",gender:"M",crew:"Pink",all:"Bee stings — EpiPen in bag",days:["Mon","Wed","Thu"]}]);
+
+  household({pf:"Beth",pl:"Fischer",pe:"beth.fischer@example.com",pp:"262-555-0151",pa:"262-555-0152",
+    en:"Beth Fischer",er:"Mother",ep:"262-555-0151"},
+    [{first:"Ava",last:"Fischer",grade:"2",gender:"F",crew:"Purple",cdc:true,room:"Room 4"}]);
+
+  household({pf:"Julie",pl:"Weber",pe:"julie.weber@example.com",pp:"262-555-0161",
+    en:"Steve Weber",er:"Father",ep:"262-555-0162",an:"Steve Weber",ap:"262-555-0162"},
+    [{first:"Mason",last:"Weber",grade:"5",gender:"M",crew:"Silver",days:["Mon","Tue","Wed","Thu"]}]);
+
+  household({pf:"Nina",pl:"Becker",pe:"nina.becker@example.com",pp:"262-555-0171",
+    en:"Grandma Rose",er:"Grandmother",ep:"262-555-0173",an:"Grandma Rose",ap:"262-555-0173",photo:false},
+    [{first:"Sophia",last:"Becker",grade:"1",gender:"F",crew:"Pink",cdc:true,room:"Room 3",all:"Dairy"}]);
+
+  household({pf:"Kate",pl:"Hoffmann",pe:"kate.hoffmann@example.com",pp:"262-555-0181",
+    en:"Joe Hoffmann",er:"Father",ep:"262-555-0182",an:"Joe Hoffmann",ap:"262-555-0182"},
+    [{first:"Lucas",last:"Hoffmann",grade:"2",gender:"M",crew:"Purple",days:["Tue","Wed","Thu"]}]);
+
+  household({pf:"Dana",pl:"Keller",pe:"dana.keller@example.com",pp:"262-555-0191",pa:"262-555-0192",
+    en:"Dana Keller",er:"Mother",ep:"262-555-0191"},
+    [{first:"Mia",last:"Keller",grade:"3",gender:"F",crew:"Yellow",cdc:true,room:"Room 6",med:"Type 1 diabetic — see care plan in office"}]);
+
+  household({pf:"Lisa",pl:"Braun",pe:"lisa.braun@example.com",pp:"262-555-0201",
+    en:"Tim Braun",er:"Father",ep:"262-555-0202",an:"Tim Braun",ap:"262-555-0202"},
+    [{first:"Ethan",last:"Braun",grade:"4",gender:"M",crew:"Yellow",days:["Mon","Tue","Wed","Thu"]}]);
+
+  household({pf:"Anne",pl:"Vogel",pe:"anne.vogel@example.com",pp:"262-555-0211",pa:"262-555-0212",
+    en:"Anne Vogel",er:"Mother",ep:"262-555-0211"},
+    [{first:"Charlotte",last:"Vogel",grade:"1",gender:"F",crew:"Orange",cdc:true,room:"Room 3"}]);
+
+  household({pf:"Erin",pl:"Schulz",pe:"erin.schulz@example.com",pp:"262-555-0241",
+    en:"Nate Schulz",er:"Father",ep:"262-555-0242",an:"Nate Schulz",ap:"262-555-0242"},
+    [{first:"Jack",last:"Schulz",grade:"2",gender:"M",crew:"Red",all:"Gluten (celiac)",days:["Mon","Tue","Thu"]}]);
+
   const volunteers=[
-    {id:uid(),name:"Todd Klumb",role:"VBS Director / Lead"},
-    {id:uid(),name:"Susie Klumb",role:"Asst Director"},
-    {id:uid(),name:"Karen Kloehn",role:"Asst Director"},
-    {id:uid(),name:"Pastor Davis",role:"Pastor"},
-    {id:uid(),name:"Bridget Smedal",role:"Snack team lead"},
-    {id:uid(),name:"Karen Kentopp",role:"Registration / Check-in"},
-    {id:uid(),name:"Crystal Zurn",role:"Games (filling in)"}
+    {id:uid(),name:"Todd Klumb",   roleKey:"director",email:"toddklumb@gmail.com",       phone:"262-707-4666",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Susie Klumb",  roleKey:"asst",    email:"susieklumb4@live.com",      phone:"",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Karen Kloehn", roleKey:"asst",    email:"",                          phone:"",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Pastor Davis", roleKey:"pastor",  email:"pastor.davis@mylivingword.com",phone:"",days:["Mon","Thu"]},
+    {id:uid(),name:"Bridget Smedal",roleKey:"snack",  email:"bridget.smedal@gmail.com",  phone:"",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Karen Kentopp",roleKey:"checkin", email:"kjkentopp@gmail.com",       phone:"",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Crystal Zurn", roleKey:"station",  email:"crystalzurn@gmail.com",     phone:"",days:["Mon","Tue","Wed","Thu"]}
   ];
   const now=new Date(), ago=m=>new Date(now.getTime()-m*60000).toISOString();
   const activity=[
@@ -315,7 +432,10 @@ function seedDemo(){
     {at:ago(8),  user:"Karen Kentopp", action:"Signed in"},
     {at:ago(40), user:"Todd Klumb",    action:"Edited child details: Olivia Meyer"}
   ];
-  return {children:kids,volunteers,attendance:{},activity};
+  const announcements=[
+    {id:uid(),at:ago(20),by:"Todd Klumb",text:"Welcome team! Day 1 — please arrive by 8:30 to get your crews ready. Water bottles are by the sanctuary doors.",image:""}
+  ];
+  return {children:kids,volunteers,attendance:{},activity,announcements,scheduleLoc:{}};
 }
 function demoStore(){
   let raw=localStorage.getItem(DEMO_KEY);
@@ -330,6 +450,8 @@ const demoDB = {
     DATA.children=s.children; DATA.volunteers=s.volunteers;
     DATA.attendance=s.attendance||{};
     DATA.activity=s.activity||[];
+    DATA.announcements=s.announcements||[];
+    DATA.scheduleLoc=s.scheduleLoc||{};
   },
   async logActivity(entry){
     const s=demoStore(); s.activity=s.activity||[]; s.activity.unshift(entry);
@@ -351,16 +473,36 @@ const demoDB = {
     r.outAt=nowISO(); r.outBy=by||""; r.releasedTo=releasedTo||"";
     s.attendance[day][childId]=r; demoSave(s); DATA.attendance=s.attendance;
   },
-  async saveChild(child){
+  async saveChild(child, applyToFamily){
     const s=demoStore();
     if(child.id && s.children.some(c=>c.id===child.id)){
       s.children=s.children.map(c=>c.id===child.id?child:c);
     } else { child.id=child.id||uid(); s.children.push(child); }
+    if(applyToFamily && child.familyId){
+      s.children=s.children.map(c=>(c.familyId===child.familyId && c.id!==child.id)?{...c,parent:child.parent}:c);
+    }
     demoSave(s); DATA.children=s.children;
   },
   async saveVolunteer(v){
-    const s=demoStore(); v.id=v.id||uid(); s.volunteers.push(v);
+    const s=demoStore();
+    if(v.id && s.volunteers.some(x=>x.id===v.id)){ s.volunteers=s.volunteers.map(x=>x.id===v.id?v:x); }
+    else { v.id=v.id||uid(); s.volunteers.push(v); }
     demoSave(s); DATA.volunteers=s.volunteers;
+  },
+  async saveAnnouncement(a){
+    const s=demoStore(); s.announcements=s.announcements||[]; s.announcements.unshift(a);
+    demoSave(s); DATA.announcements=s.announcements;
+  },
+  async deleteAnnouncement(id){
+    const s=demoStore(); s.announcements=(s.announcements||[]).filter(a=>a.id!==id);
+    demoSave(s); DATA.announcements=s.announcements;
+  },
+  async saveScheduleLoc(map){
+    const s=demoStore(); s.scheduleLoc=map; demoSave(s); DATA.scheduleLoc=map;
+  },
+  async importChildren(rows){
+    const s=demoStore(); rows.forEach(c=>{ c.id=c.id||uid(); s.children.push(c); });
+    demoSave(s); DATA.children=s.children;
   }
 };
 
@@ -373,7 +515,7 @@ const liveDB = {
     const {data:volunteers}=await SB.from("volunteers").select("*").order("name");
     const {data:att}=await SB.from("attendance").select("*").in("event_date",CONFIG.dates);
     DATA.children=(children||[]).map(mapChildFromDb);
-    DATA.volunteers=volunteers||[];
+    DATA.volunteers=(volunteers||[]).map(v=>({id:v.id,name:v.name,roleKey:v.role_key||"volunteer",role:v.role,email:v.email,phone:v.phone,days:v.days||[]}));
     DATA.attendance={};
     (att||[]).forEach(r=>{
       DATA.attendance[r.event_date]=DATA.attendance[r.event_date]||{};
@@ -381,6 +523,10 @@ const liveDB = {
     });
     const {data:log}=await SB.from("activity_log").select("*").order("at",{ascending:false}).limit(200);
     DATA.activity=(log||[]).map(r=>({at:r.at,user:r.user_email,action:r.action}));
+    const {data:ann}=await SB.from("announcements").select("*").order("at",{ascending:false}).limit(100);
+    DATA.announcements=(ann||[]).map(r=>({id:r.id,at:r.at,by:r.by_name,text:r.text,image:r.image_url||""}));
+    const {data:sl}=await SB.from("app_settings").select("*").eq("key","scheduleLoc").maybeSingle?await SB.from("app_settings").select("*").eq("key","scheduleLoc").maybeSingle():{data:null};
+    DATA.scheduleLoc=(sl&&sl.value)||{};
   },
   async logActivity(entry){
     await SB.from("activity_log").insert({user_email:entry.user,action:entry.action,at:entry.at||nowISO()});
@@ -398,15 +544,24 @@ const liveDB = {
     await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_out_at:nowISO(),checked_out_by:by,released_to:releasedTo},{onConflict:"child_id,event_date"});
     await this.loadAll();
   },
-  async saveChild(child){
-    const row=mapChildToDb(child);
-    await SB.from("children").upsert(row);
+  async saveChild(child, applyToFamily){
+    await SB.from("children").upsert(mapChildToDb(child));
+    if(applyToFamily && child.familyId){
+      await SB.from("children").update({parent:child.parent}).eq("family_id",child.familyId).neq("id",child.id);
+    }
     await this.loadAll();
   },
-  async saveVolunteer(v){ await SB.from("volunteers").insert(v); await this.loadAll(); }
+  async saveVolunteer(v){
+    await SB.from("volunteers").upsert({id:v.id,name:v.name,role_key:v.roleKey,role:v.role||ROLE_LABEL(v.roleKey),email:v.email,phone:v.phone,days:v.days||[]});
+    await this.loadAll();
+  },
+  async saveAnnouncement(a){ await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}); await this.loadAll(); },
+  async deleteAnnouncement(id){ await SB.from("announcements").delete().eq("id",id); await this.loadAll(); },
+  async saveScheduleLoc(map){ await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}); DATA.scheduleLoc=map; },
+  async importChildren(rows){ await SB.from("children").insert(rows.map(mapChildToDb)); await this.loadAll(); }
 };
-function mapChildFromDb(r){return {id:r.id,first:r.first_name,last:r.last_name,grade:r.grade,crew:r.crew,allergies:r.allergies||"",medical:r.medical_notes||"",photoConsent:r.photo_consent,community:r.community||false,guardians:r.guardians||[],emergency:r.emergency||null,consent:r.consent||null};}
-function mapChildToDb(c){return {id:c.id,first_name:c.first,last_name:c.last,grade:c.grade,crew:c.crew,allergies:c.allergies,medical_notes:c.medical,photo_consent:c.photoConsent,community:c.community||false,guardians:c.guardians,emergency:c.emergency,consent:c.consent||null};}
+function mapChildFromDb(r){return {id:r.id,familyId:r.family_id,first:r.first_name,last:r.last_name,grade:r.grade,gender:r.gender||"",dob:r.dob||"",crew:r.crew,attendsCDC:!!r.attends_cdc,cdcRoom:r.cdc_room||"",community:r.community||false,days:r.days||[],allergies:r.allergies||"",medical:r.medical_notes||"",comments:r.comments||"",parent:r.parent||null,extraPickups:r.extra_pickups||[],consent:r.consent||null};}
+function mapChildToDb(c){return {id:c.id,family_id:c.familyId||null,first_name:c.first,last_name:c.last,grade:c.grade,gender:c.gender||null,dob:c.dob||null,crew:c.crew,attends_cdc:!!c.attendsCDC,cdc_room:c.cdcRoom||null,community:isCommunity(c),days:c.days||[],allergies:c.allergies,medical_notes:c.medical,comments:c.comments||"",parent:c.parent||null,extra_pickups:c.extraPickups||[],consent:c.consent||null};}
 
 let db = demoDB;
 
@@ -417,11 +572,35 @@ function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;
 function fullName(c){return c.first+" "+c.last;}
 function initials(c){return (c.first[0]||"")+(c.last[0]||"");}
 const GRADE_ORDER=["K4","K5","1","2","3","4","5"];
+const WEEK=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function gradeLabel(g){return g==="K4"?"PreK (K4)":g==="K5"?"Kindergarten (K5)":g==="K"?"Kindergarten":"Grade "+g;}
 function gradeSort(g){const i=GRADE_ORDER.indexOf(g);return i<0?99:i;}
 function fmtTime(iso){if(!iso)return"";const d=new Date(iso);return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});}
 function dayName(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});}
 function dayShort(iso){const d=new Date(iso+"T12:00:00");return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});}
+function weekdayCode(iso){return WEEK[new Date(iso+"T12:00:00").getDay()];}
+function ageFrom(dob){ if(!dob)return""; const b=new Date(dob+"T12:00:00"); if(isNaN(b))return""; const n=new Date(); let a=n.getFullYear()-b.getFullYear(); const m=n.getMonth()-b.getMonth(); if(m<0||(m===0&&n.getDate()<b.getDate()))a--; return a>=0&&a<25?a+" yrs":""; }
+
+function isCommunity(c){ if(typeof c.attendsCDC==="boolean") return !c.attendsCDC; return !!c.community; }
+function childPhoto(c){ if(c.parent && typeof c.parent.photoConsent==="boolean") return c.parent.photoConsent; return c.photoConsent!==false; }
+function childRoom(c){ return c.cdcRoom||""; }
+function registeredForDay(c,day){ if(!c.days||!c.days.length) return true; return c.days.includes(weekdayCode(day)); }
+
+function guardiansFor(c){
+  const list=[];
+  const p=c.parent;
+  if(p){
+    const pn=[p.first,p.last].filter(Boolean).join(" ").trim();
+    if(pn) list.push({name:pn,phone:p.phone||"",relationship:"Parent / guardian"});
+    if(p.altPickup && p.altPickup.name) list.push({name:p.altPickup.name,phone:p.altPickup.phone||"",relationship:"Alternate pickup"});
+  }
+  (c.extraPickups||[]).forEach(x=>{ if(x&&x.name) list.push({name:x.name,phone:x.phone||"",relationship:x.relationship||"Added at check-in"}); });
+  // legacy inline guardians (older records)
+  (c.guardians||[]).forEach(g=>{ if(g&&g.name&&g.canPickup!==false) list.push(g); });
+  // dedupe by name
+  const seen={}; return list.filter(g=>{const k=g.name.toLowerCase();if(seen[k])return false;seen[k]=1;return true;});
+}
+function emergencyFor(c){ return (c.parent&&c.parent.emergency&&c.parent.emergency.name)?c.parent.emergency:(c.emergency||null); }
 
 function statusOf(child,day){
   const r=(DATA.attendance[day]||{})[child.id];
@@ -429,6 +608,7 @@ function statusOf(child,day){
   if(r.outAt) return {code:"out",rec:r};
   return {code:"in",rec:r};
 }
+function attendedAnyDay(c){ return CONFIG.dates.some(d=>{const r=(DATA.attendance[d]||{})[c.id];return r&&r.inAt;}); }
 function sortedChildren(){
   return [...DATA.children].sort((a,b)=>{
     if(a.last!==b.last)return a.last.localeCompare(b.last);
@@ -437,9 +617,40 @@ function sortedChildren(){
 }
 function matches(c,q){
   if(!q)return true; q=q.toLowerCase();
-  return fullName(c).toLowerCase().includes(q)||(c.crew||"").toLowerCase().includes(q);
+  return fullName(c).toLowerCase().includes(q)||(c.crew||"").toLowerCase().includes(q)||(childRoom(c).toLowerCase().includes(q));
 }
 function hasAlert(c){return (c.allergies&&c.allergies.trim())||(c.medical&&c.medical.trim());}
+function distinctRooms(){ const r=new Set(); DATA.children.forEach(c=>{ if(childRoom(c)) r.add(childRoom(c)); }); return [...r].sort(); }
+function passFilters(c){
+  if(state.fCrew && c.crew!==state.fCrew) return false;
+  if(state.fRoom && childRoom(c)!==state.fRoom) return false;
+  return true;
+}
+function locFor(station){
+  if(!station) return "";
+  return (DATA.scheduleLoc && DATA.scheduleLoc[station]!=null && DATA.scheduleLoc[station]!=="")
+    ? DATA.scheduleLoc[station]
+    : (CONFIG.stationLocations[station]||"");
+}
+function eventStats(){
+  const kids=DATA.children;
+  const reg=kids.length;
+  const attendedAny=kids.filter(attendedAnyDay).length;
+  const daily=CONFIG.dates.map(d=>kids.filter(c=>{const r=(DATA.attendance[d]||{})[c.id];return r&&r.inAt;}).length);
+  const highest=daily.length?Math.max(...daily):0;
+  const sum=daily.reduce((a,b)=>a+b,0);
+  const avg=daily.length?Math.round(sum/daily.length):0;
+  const dmin=daily.length?Math.min(...daily):0;
+  const commAny=kids.filter(c=>isCommunity(c)&&attendedAnyDay(c)).length;
+  return {reg,attendedAny,highest,avg,daily,dmin,dmax:highest,commAny,vols:DATA.volunteers.length};
+}
+function dotset(c){
+  const dots=[];
+  if(childPhoto(c)===false) dots.push('<span class="ndot red" title="No photos"></span>');
+  if(hasAlert(c)) dots.push('<span class="ndot yellow" title="Allergy / medical"></span>');
+  if(isCommunity(c)) dots.push('<span class="ndot blue" title="Community child"></span>');
+  return dots.length?`<span class="dotset">${dots.join("")}</span>`:"";
+}
 
 /* ============================================================
    TOAST
@@ -458,6 +669,7 @@ function toast(msg,undoFn){
    ============================================================ */
 function go(view,extra={}){ Object.assign(state,{view,search:""},extra); window.scrollTo(0,0); render(); }
 async function refresh(){ await db.loadAll(); render(); }
+function guard(cap,view){ if(cap && !can(cap)){ renderNoAccess(view); return false; } return true; }
 
 /* ============================================================
    RENDER
@@ -476,35 +688,80 @@ function topbar(title,sub,showBack,showDay){
     </div>
   </div>`;
 }
+function renderNoAccess(view){
+  app.innerHTML = topbar("Not available","",true,false) + `
+    <div class="content">
+      <div class="panel" style="text-align:center">
+        <div style="font-size:40px">🔒</div>
+        <h3>This section isn't part of your role</h3>
+        <p class="mini">You're viewing as <b>${esc(ROLE_LABEL(currentRoleKey()))}</b>. Ask the director if you need access to <b>${esc(view||"this")}</b>.</p>
+        <button class="btn ghost" data-act="home" style="margin-top:12px">Back to home</button>
+      </div>
+    </div>`;
+}
 
 function render(){
   const v=state.view;
   if(v==="home") return renderHome();
-  if(v==="checkin") return renderCheckList("in");
-  if(v==="checkout") return renderCheckList("out");
+  if(v==="checkin") return can("checkin")?renderCheckList("in"):renderNoAccess("Check in");
+  if(v==="checkout") return can("checkout")?renderCheckList("out"):renderNoAccess("Check out");
   if(v==="checkoutConfirm") return renderCheckoutConfirm();
-  if(v==="roster") return renderRoster();
+  if(v==="statList") return renderStatList();
+  if(v==="roster") return can("roster")?renderRoster():renderNoAccess("Roster");
+  if(v==="reports") return can("roster")?renderReports():renderNoAccess("Reports");
   if(v==="child") return renderChild();
-  if(v==="editChild") return renderEditChild();
-  if(v==="allergies") return renderAllergies();
-  if(v==="schedule") return renderSchedule();
-  if(v==="kitchen") return renderKitchen();
-  if(v==="calendar") return renderCalendar();
+  if(v==="editChild") return can("editChild")||can("addChild")?renderEditChild():renderNoAccess("Edit child");
+  if(v==="allergies") return can("allergiesView")?renderAllergies():renderNoAccess("Allergies");
+  if(v==="schedule") return can("schedule")?renderSchedule():renderNoAccess("Schedule");
+  if(v==="scheduleLoc") return can("scheduleEdit")?renderScheduleLoc():renderNoAccess("Edit locations");
+  if(v==="kitchen") return can("snackView")?renderKitchen():renderNoAccess("Snack team");
+  if(v==="calendar") return can("calendar")?renderCalendar():renderNoAccess("Calendar");
+  if(v==="announcements") return can("announce")?renderAnnouncements():renderNoAccess("Announcements");
+  if(v==="export") return can("export")?renderExport():renderNoAccess("Export");
+  if(v==="import") return can("addChild")?renderImport():renderNoAccess("Import");
   if(v==="activity") return renderActivity();
   if(v==="consent") return renderConsent();
-  if(v==="volunteers") return renderVolunteers();
+  if(v==="volunteers") return can("volunteersView")?renderVolunteers():renderNoAccess("Volunteers");
+  if(v==="rolepick") return renderRolePicker();
   if(v==="pickday") return renderPickDay();
   if(v==="info") return renderInfo();
   renderHome();
 }
 
+function helperBar(){
+  if(LIVE) return "";
+  const opts=DATA.volunteers.map(v=>`<option ${v.name===state.currentVolunteer?"selected":""}>${esc(v.name)}</option>`).join("");
+  return `<div class="helper">
+    <label>👤 Helper on duty:</label>
+    <select data-act="setvol"><option value="">— choose —</option>${opts}</select>
+  </div>`;
+}
+
 function renderHome(){
   const day=state.day;
   const kids=DATA.children;
-  let inN=0,outN=0,notN=0,alertPresent=0;
+  let inN=0,outN=0,alertPresent=0;
   kids.forEach(c=>{const s=statusOf(c,day).code;
     if(s==="in"){inN++; if(hasAlert(c))alertPresent++;}
-    else if(s==="out")outN++; else notN++;});
+    else if(s==="out")outN++;});
+  const regN=kids.filter(c=>registeredForDay(c,day)).length;
+  const notN=Math.max(0, regN-inN-outN);
+
+  const A=[
+    {cap:"checkin",     act:"checkin",       cls:"act checkin", ico:"✅", t:"Check In"},
+    {cap:"checkout",    act:"checkout",      cls:"act checkout",ico:"👋", t:"Check Out"},
+    {cap:"roster",      act:"roster",        cls:"act",         ico:"📋", t:"Roster"},
+    {cap:"allergiesView",act:"allergies",    cls:"act",         ico:"⚠️", t:"Allergies"},
+    {cap:"snackView",   act:"kitchen",       cls:"act",         ico:"🍎", t:"Snack Team"},
+    {cap:"schedule",    act:"schedule",      cls:"act",         ico:"🗓️", t:"Schedule"},
+    {cap:"calendar",    act:"calendar",      cls:"act",         ico:"📅", t:"Calendar"},
+    {cap:"announce",    act:"announcements", cls:"act",         ico:"📣", t:"Announcements"},
+    {cap:"volunteersView",act:"volunteers",  cls:"act",         ico:"👥", t:"Volunteers"},
+    {cap:"export",      act:"export",        cls:"act",         ico:"📊", t:"Reports & Export"}
+  ].filter(a=>can(a.cap));
+  const actionsHtml=A.map(a=>`<div class="${a.cls}" data-act="${a.act}"><span class="ico">${a.ico}</span>${a.t}</div>`).join("")
+    + `<div class="act" data-act="info"><span class="ico">⋯</span>Info &amp; Setup</div>`;
+
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
     const total=kids.filter(c=>c.crew===cr).length;
@@ -512,30 +769,28 @@ function renderHome(){
       <span class="name">${esc(cr)}</span><span class="cnt">${present} of ${total} here</span></div>`;
   }).join("");
 
+  const roleChip = LIVE ? "" :
+    `<button class="rolechip" data-act="rolepick">${ROLE_EM(currentRoleKey())} Viewing as: ${esc(ROLE_LABEL(currentRoleKey()))} ▾</button>`;
+
+  const statsBlock = `
+    <h2 class="sect">Today at a glance <span class="mini" style="text-transform:none;letter-spacing:0">(tap a number for the list)</span></h2>
+    <div class="stats">
+      <div class="stat green" data-act="statList" data-kind="in"><div class="n">${inN}</div><div class="l">✅ Here now</div></div>
+      <div class="stat slate" data-act="statList" data-kind="out"><div class="n">${outN}</div><div class="l">👋 Checked out</div></div>
+      <div class="stat primary" data-act="statList" data-kind="notin"><div class="n">${notN}</div><div class="l">⏳ Not arrived</div></div>
+      <div class="stat amber" data-act="statList" data-kind="reg"><div class="n">${regN}</div><div class="l">👧 Registered today</div></div>
+    </div>
+    ${alertPresent>0?`<div class="alertbar">⚠️ ${alertPresent} child${alertPresent>1?"ren":""} here today ${alertPresent>1?"have":"has"} an allergy or medical note — <a class="link" data-act="allergies" style="color:inherit;text-decoration:underline">see list</a></div>`:``}`;
+
   app.innerHTML = topbar(CONFIG.eventName, CONFIG.tagline, false, true) + `
     <div class="content">
-      ${LIVE?"":`<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved.</div>`}
+      ${LIVE?"":`<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved. ${roleChip}</div>`}
       ${helperBar()}
-      <div class="stats">
-        <div class="stat green"><div class="n">${inN}</div><div class="l">✅ Here now</div></div>
-        <div class="stat slate"><div class="n">${outN}</div><div class="l">👋 Checked out</div></div>
-        <div class="stat primary"><div class="n">${notN}</div><div class="l">⏳ Not arrived</div></div>
-        <div class="stat amber"><div class="n">${kids.length}</div><div class="l">👧 Registered</div></div>
-      </div>
-      ${alertPresent>0?`<div class="alertbar">⚠️ ${alertPresent} child${alertPresent>1?"ren":""} here today ${alertPresent>1?"have":"has"} an allergy or medical note — <a class="link" data-act="allergies" style="color:inherit;text-decoration:underline">see list</a></div>`:``}
 
       <h2 class="sect">Do something</h2>
-      <div class="actions">
-        <div class="act checkin" data-act="checkin"><span class="ico">✅</span>Check In</div>
-        <div class="act checkout" data-act="checkout"><span class="ico">👋</span>Check Out</div>
-        <div class="act" data-act="schedule"><span class="ico">🗓️</span>Schedule</div>
-        <div class="act" data-act="kitchen"><span class="ico">🍎</span>Snack Team</div>
-        <div class="act" data-act="calendar"><span class="ico">📅</span>Calendar</div>
-        <div class="act" data-act="roster"><span class="ico">📋</span>Roster</div>
-        <div class="act" data-act="allergies"><span class="ico">⚠️</span>Allergies</div>
-        <div class="act" data-act="volunteers"><span class="ico">👥</span>Volunteers</div>
-        <div class="act" data-act="info"><span class="ico">⋯</span>Info &amp; Setup</div>
-      </div>
+      <div class="actions">${actionsHtml}</div>
+
+      ${can("dashboard")?statsBlock:""}
 
       <h2 class="sect">Crews — here now</h2>
       ${crewRows}
@@ -546,36 +801,75 @@ function renderHome(){
     </div>`;
 }
 
-function helperBar(){
-  const opts=DATA.volunteers.map(v=>`<option ${v.name===state.currentVolunteer?"selected":""}>${esc(v.name)}</option>`).join("");
-  return `<div class="helper">
-    <label>👤 Helper on duty:</label>
-    <select data-act="setvol"><option value="">— choose —</option>${opts}</select>
+function renderStatList(){
+  const day=state.day, kind=state.statKind||"in";
+  let list, title;
+  if(kind==="in"){ title="Here now"; list=sortedChildren().filter(c=>statusOf(c,day).code==="in"); }
+  else if(kind==="out"){ title="Checked out"; list=sortedChildren().filter(c=>statusOf(c,day).code==="out"); }
+  else if(kind==="notin"){ title="Not arrived"; list=sortedChildren().filter(c=>registeredForDay(c,day)&&statusOf(c,day).code==="notin"); }
+  else { title="Registered today"; list=sortedChildren().filter(c=>registeredForDay(c,day)); }
+  const rows=list.map(c=>childRow(c,"child")).join("") || `<div class="empty">Nobody in this list right now.</div>`;
+  app.innerHTML = topbar(title, dayName(day)+" · "+list.length, true, true) + `
+    <div class="content"><div class="list">${rows}</div></div>`;
+}
+
+function childRow(c,act){
+  const st=statusOf(c,state.day).code;
+  const stTag = st==="in"?`<span class="status in">Here</span>`:st==="out"?`<span class="status out">Out</span>`:`<span class="status notin">—</span>`;
+  return `<div class="kid" data-act="${act||'child'}" data-id="${c.id}">
+    <div class="avatar">${esc(initials(c))}</div>
+    <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}</div>
+      <div class="meta">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)} · ${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}</div></div>
+    ${stTag}<span class="chev">›</span>
+  </div>`;
+}
+
+function filterBar(opts){
+  opts=opts||{};
+  const crewOpts=CONFIG.crews.map(cr=>`<option value="${cr}" ${state.fCrew===cr?"selected":""}>${cr}</option>`).join("");
+  const rooms=distinctRooms();
+  const roomOpts=rooms.map(r=>`<option value="${esc(r)}" ${state.fRoom===r?"selected":""}>${esc(r)}</option>`).join("");
+  return `<div class="filters">
+    <select data-filter="fCrew"><option value="">All crews</option>${crewOpts}</select>
+    ${rooms.length?`<select data-filter="fRoom"><option value="">All CDC rooms</option>${roomOpts}</select>`:""}
+    ${opts.community?`<label class="toggle"><input type="checkbox" data-toggle="fCommunity" ${state.fCommunity?"checked":""}>Community kids only</label>`:""}
   </div>`;
 }
 
 function renderCheckList(mode){
+  // Lock to real today during the event so nobody checks the wrong date.
+  const locked = todayIsEventDay();
+  if(locked) state.day=realToday();
   const day=state.day, q=state.search;
-  const list=sortedChildren().filter(c=>{
+  let list=sortedChildren().filter(c=>{
     const s=statusOf(c,day).code;
-    return (mode==="in"? s!=="in" && s!=="out" : s==="in") && matches(c,q);
+    const base = (mode==="in"? (s!=="in"&&s!=="out"&&registeredForDay(c,day)) : s==="in");
+    return base && matches(c,q) && passFilters(c);
   });
+  if(mode==="out" && state.fCommunity) list=list.filter(isCommunity);
+
   const rows=list.map(c=>{
-    const st=statusOf(c,day);
     return `<div class="kid" data-act="${mode==='in'?'doCheckin':'toCheckout'}" data-id="${c.id}">
       <div class="avatar">${esc(initials(c))}</div>
-      <div class="info"><div class="nm">${esc(fullName(c))}</div>
-        <div class="meta">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}
+      <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}</div>
+        <div class="meta">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}
           ${c.allergies?`<span class="tag allergy">⚠ ${esc(c.allergies.split(" ")[0])}</span>`:""}</div></div>
       ${mode==='in'?'<span class="chev">＋</span>':'<span class="status in">Tap to check out</span>'}
     </div>`;
   }).join("") || `<div class="empty">${mode==='in'?"Everyone registered is checked in or out. 🎉":"No children are checked in right now."}</div>`;
 
-  app.innerHTML = topbar(mode==='in'?"Check In":"Check Out", dayName(day), true, true) + `
+  const dayCtl = locked
+    ? `<span class="lock">📆 Today only — ${dayName(realToday())}</span>`
+    : "";
+  app.innerHTML = topbar(mode==='in'?"Check In":"Check Out", dayName(day), true, !locked) + `
     <div class="content">
       ${helperBar()}
-      <input class="search" placeholder="Search a child's name…" value="${esc(q)}" data-search>
-      ${mode==='in'?`<div class="banner" style="background:#e7f6ec;border-color:#c3e6cf;color:#0b5c2e">Tap a name to check the child IN. ${list.length} waiting.</div>`:`<div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Tap a name to check the child OUT to a guardian. ${list.length} here now.</div>`}
+      ${dayCtl?`<div style="margin-bottom:12px">${dayCtl}</div>`:""}
+      <input class="search" placeholder="Search a child's name or room…" value="${esc(q)}" data-search>
+      ${filterBar({community: mode==="out"})}
+      ${mode==='in'
+        ? `<div class="banner" style="background:#e7f6ec;border-color:#c3e6cf;color:#0b5c2e">Tap a name to check the child IN. ${list.length} waiting. Dots: <span class="ndot red"></span> no photos · <span class="ndot yellow"></span> allergy · <span class="ndot blue"></span> community.</div>`
+        : `<div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Tap a name to check the child OUT to a guardian. ${list.length} here now.</div>`}
       <div class="list">${rows}</div>
     </div>`;
   focusSearch();
@@ -584,7 +878,7 @@ function renderCheckList(mode){
 function renderCheckoutConfirm(){
   const c=DATA.children.find(x=>x.id===state.selChild);
   if(!c){go("checkout");return;}
-  const guards=(c.guardians||[]).filter(g=>g.canPickup!==false);
+  const guards=guardiansFor(c);
   const gButtons=guards.map((g,i)=>`
     <button class="pick ${state.selGuardian===i?'sel':''}" data-act="pickguard" data-i="${i}">
       <div style="font-weight:700">${esc(g.name)}</div>
@@ -592,174 +886,258 @@ function renderCheckoutConfirm(){
       ${g.phone?`<div class="ph">📞 ${esc(g.phone)}</div>`:""}
     </button>`).join("");
   const canConfirm = state.selGuardian!=null;
+  const addForm = state.addingPickup ? `
+    <div class="form panel" style="margin-top:6px">
+      <h3 style="font-size:15px">Add a pickup person</h3>
+      <div class="banner" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">Use this when a parent left a note that someone else is picking up.</div>
+      <label>Name</label><input id="ap_name" placeholder="Full name">
+      <label>Phone (optional)</label><input id="ap_phone" inputmode="tel" placeholder="262-555-0000">
+      <button class="btn blue" data-act="savePickup" style="margin-top:12px">Add to pickup list</button>
+      <button class="btn ghost" data-act="cancelPickup">Cancel</button>
+    </div>` : "";
+
   app.innerHTML = topbar("Check Out",fullName(c),true,false) + `
     <div class="content">
       <div class="panel" style="border-left:5px solid var(--primary)">
-        <h3>${esc(fullName(c))}</h3>
-        <div class="field"><div class="k">Grade / Crew</div><div class="v">${esc(gradeLabel(c.grade))} · ${esc(c.crew)} crew</div></div>
-        ${c.community?`<div class="field"><div class="k">🔵 Community child</div><div class="v" style="color:var(--primary);font-weight:700">Sign out to an authorized guardian below</div></div>`:""}
+        <h3>${esc(fullName(c))} ${dotset(c)}</h3>
+        <div class="field"><div class="k">Grade / Crew</div><div class="v">${esc(gradeLabel(c.grade))} · ${esc(c.crew)} crew${childRoom(c)?" · "+esc(childRoom(c)):""}</div></div>
+        ${isCommunity(c)?`<div class="field"><div class="k">🔵 Community child</div><div class="v" style="color:var(--primary);font-weight:700">Sign out to an authorized guardian below</div></div>`:`<div class="field"><div class="k">🧸 CDC child</div><div class="v">CDC teachers usually handle pickup — release directly only if the parent is here.</div></div>`}
         ${hasAlert(c)?`<div class="field"><div class="k">⚠️ Health note</div><div class="v warn">${esc([c.allergies,c.medical].filter(Boolean).join("  ·  "))}</div></div>`:""}
       </div>
       <h2 class="sect">Who is picking up?</h2>
       <div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">Only release to someone on this list. Not sure? Check ID and ask the check-in lead.</div>
-      ${gButtons || `<div class="empty">No authorized pickups listed. Ask the check-in lead before releasing.</div>`}
+      ${gButtons || `<div class="empty">No authorized pickups listed. Add one below or ask the check-in lead.</div>`}
+      ${can("addPickup")&&!state.addingPickup?`<button class="btn ghost" data-act="addPickup">＋ Add a pickup person</button>`:""}
+      ${addForm}
       ${helperBar()}
       <button class="btn green" data-act="confirmCheckout" ${canConfirm?"":'style="opacity:.45;pointer-events:none"'}>✅ Confirm check-out</button>
+      ${can("undoCheckin")?`<button class="btn ghost" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Checked in by mistake? Undo check-in</button>`:""}
       <button class="btn ghost" data-act="back">Cancel</button>
     </div>`;
 }
-
 function renderRoster(){
   const q=state.search;
-  const list=sortedChildren().filter(c=>matches(c,q));
+  const list=sortedChildren().filter(c=>matches(c,q)&&passFilters(c));
   const rows=list.map(c=>{
     const st=statusOf(c,state.day).code;
     const stTag = st==="in"?`<span class="status in">Here</span>`:st==="out"?`<span class="status out">Out</span>`:`<span class="status notin">—</span>`;
     return `<div class="kid" data-act="child" data-id="${c.id}">
       <div class="avatar">${esc(initials(c))}</div>
-      <div class="info"><div class="nm">${esc(fullName(c))}</div>
-        <div class="meta"><span class="tag grade">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)}</span>${esc(c.crew)}
-          ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}${c.community?`<span class="tag" style="background:#e4eefb;color:#2f6fb0">🔵 community</span>`:""}</div></div>
+      <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}</div>
+        <div class="meta"><span class="tag grade">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)}</span>${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}
+          ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}${isCommunity(c)?`<span class="tag" style="background:#e4eefb;color:#2f6fb0">🔵 community</span>`:""}</div></div>
       ${stTag}<span class="chev">›</span>
     </div>`;
   }).join("") || `<div class="empty">No matches.</div>`;
   app.innerHTML = topbar("Roster", DATA.children.length+" registered", true, true) + `
     <div class="content">
-      <input class="search" placeholder="Search name or crew…" value="${esc(q)}" data-search>
+      <button class="btn ghost no-print" data-act="reports" style="margin:0 0 12px">🖨️ Print &amp; reports</button>
+      ${can("addChild")?`<button class="btn ghost no-print" data-act="addChild" style="margin:0 0 12px">＋ Add a walk-up child</button>`:""}
+      <input class="search" placeholder="Search name, crew, or room…" value="${esc(q)}" data-search>
+      ${filterBar({})}
       <div class="list">${rows}</div>
-      <button class="btn ghost no-print" data-act="addChild" style="margin-top:16px">＋ Add a walk-up child</button>
-      <button class="btn ghost no-print" data-act="printRoster">🖨️ Print today's roster</button>
     </div>`;
   focusSearch();
+}
+
+function renderReports(){
+  const dayBtns=CONFIG.dates.map(d=>`<button class="btn ghost" data-act="printDay" data-d="${d}" style="margin-top:8px">🖨️ ${dayName(d)} — crew roster</button>`).join("");
+  app.innerHTML = topbar("Print & Reports","For CDC teachers, snack, and paper backup",true,false) + `
+    <div class="content">
+      <div class="banner">Every report shows the CDC room and the 🔵 community indicator. Good for handing the CDC teachers a paper copy, or a wifi-drop backup.</div>
+      <div class="panel">
+        <h3 style="font-size:16px">Today (${esc(dayShort(state.day))})</h3>
+        <button class="btn blue" data-act="printToday">🖨️ Today's roster (check-in sheet)</button>
+        <button class="btn ghost" data-act="printByCrew">🖨️ Today by crew (alphabetical)</button>
+      </div>
+      <div class="panel">
+        <h3 style="font-size:16px">Whole event</h3>
+        <button class="btn ghost" data-act="printAll">🖨️ Entire roster (A–Z)</button>
+        <button class="btn ghost" data-act="printAllCrew">🖨️ Entire roster by crew</button>
+        <button class="btn ghost" data-act="printDetail">🖨️ Full detail (parents, emergency, pickup) — tech-outage backup</button>
+      </div>
+      <div class="panel">
+        <h3 style="font-size:16px">Print a specific day</h3>
+        ${dayBtns}
+      </div>
+    </div>`;
 }
 
 function renderChild(){
   const c=DATA.children.find(x=>x.id===state.selChild);
   if(!c){go("roster");return;}
   const st=statusOf(c,state.day);
-  const guards=(c.guardians||[]).map(g=>`
-    <div class="field"><div class="k">${esc(g.relationship||"Guardian")}${g.canPickup===false?" (NOT authorized pickup)":""}</div>
+  const guards=guardiansFor(c).map(g=>`
+    <div class="field"><div class="k">${esc(g.relationship||"Guardian")}</div>
       <div class="v">${esc(g.name)} ${g.phone?`· <a class="link" href="tel:${esc(g.phone.replace(/[^0-9]/g,''))}">${esc(g.phone)}</a>`:""}</div></div>`).join("");
+  const em=emergencyFor(c);
+  const p=c.parent||{};
+  const siblings=DATA.children.filter(x=>x.familyId&&x.familyId===c.familyId&&x.id!==c.id);
+  const sibHtml=siblings.length?`<div class="field"><div class="k">Siblings in this family</div><div class="v">${siblings.map(s=>`<a class="link" data-act="child" data-id="${s.id}">${esc(fullName(s))}</a>`).join(" · ")}</div></div>`:"";
+  const days=(c.days&&c.days.length)?c.days.join(", "):"All days";
   app.innerHTML = topbar(fullName(c), gradeLabel(c.grade)+" · "+c.crew, true, false) + `
     <div class="content">
       <div class="panel">
         <div class="field"><div class="k">Status today (${dayShort(state.day)})</div>
           <div class="v">${st.code==="in"?`✅ Checked in at ${fmtTime(st.rec.inAt)}`:st.code==="out"?`👋 Out at ${fmtTime(st.rec.outAt)} to ${esc(st.rec.releasedTo||"—")}`:"⏳ Not arrived"}</div></div>
-        <div class="field"><div class="k">Crew / type</div><div class="v">${esc(c.crew)} crew · ${c.community?"🔵 Community child (signed pickup required)":"CDC child"}</div></div>
+        <div class="field"><div class="k">Crew / type</div><div class="v">${esc(c.crew)} crew · ${isCommunity(c)?"🔵 Community child (signed pickup required)":"🧸 CDC child"+(childRoom(c)?" · "+esc(childRoom(c)):"")}</div></div>
+        <div class="field"><div class="k">Grade / age / gender</div><div class="v">${esc(gradeLabel(c.grade))}${ageFrom(c.dob)?" · "+ageFrom(c.dob):""}${c.gender?" · "+esc(c.gender):""}</div></div>
+        <div class="field"><div class="k">Days attending</div><div class="v">${esc(days)}</div></div>
         ${c.allergies?`<div class="field"><div class="k">⚠️ Allergies</div><div class="v warn">${esc(c.allergies)}</div></div>`:""}
         ${c.medical?`<div class="field"><div class="k">✚ Medical notes</div><div class="v med">${esc(c.medical)}</div></div>`:""}
-        <div class="field"><div class="k">Photo / media consent</div><div class="v">${c.photoConsent?"✅ Yes":"🚫 No — do not photograph"}</div></div>
-        <div class="field"><div class="k">Signed parent consent</div><div class="v">${c.consent&&c.consent.signature?`✅ ${esc(c.consent.name||"")} · ${new Date(c.consent.signedAt).toLocaleDateString()}`:"❌ Not signed yet"}</div></div>
+        ${c.comments?`<div class="field"><div class="k">Comments</div><div class="v">${esc(c.comments)}</div></div>`:""}
+        <div class="field"><div class="k">Photo / media consent</div><div class="v">${childPhoto(c)?"✅ Yes":"🚫 No — do not photograph"}</div></div>
+        ${sibHtml}
       </div>
-      <div class="panel"><h3 style="font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Guardians &amp; pickup</h3>${guards||'<div class="v">None listed</div>'}
-        ${c.emergency?`<div class="field"><div class="k">Emergency contact</div><div class="v">${esc(c.emergency.name)} (${esc(c.emergency.relationship||"")}) ${c.emergency.phone?`· <a class="link" href="tel:${esc(c.emergency.phone.replace(/[^0-9]/g,''))}">${esc(c.emergency.phone)}</a>`:""}</div></div>`:""}
+      <div class="panel"><h3 style="font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Parent &amp; authorized pickup</h3>
+        ${p.email?`<div class="field"><div class="k">Parent email</div><div class="v">${esc(p.email)}</div></div>`:""}
+        ${guards||'<div class="v">None listed</div>'}
+        ${em?`<div class="field"><div class="k">Emergency contact</div><div class="v">${esc(em.name)} (${esc(em.relationship||"")}) ${em.phone?`· <a class="link" href="tel:${esc((em.phone||'').replace(/[^0-9]/g,''))}">${esc(em.phone)}</a>`:""}</div></div>`:""}
       </div>
-      ${st.code!=="in"?`<button class="btn green no-print" data-act="doCheckin" data-id="${c.id}">✅ Check in now</button>`:`<button class="btn blue no-print" data-act="toCheckout" data-id="${c.id}">👋 Check out</button>`}
-      <button class="btn ghost no-print" data-act="consent" data-id="${c.id}">✍️ ${c.consent&&c.consent.signature?"View":"Sign"} parent consent</button>
-      <button class="btn ghost no-print" data-act="editChild" data-id="${c.id}">✏️ Edit details</button>
+      ${can("checkout")&&st.code==="in"?`<button class="btn blue no-print" data-act="toCheckout" data-id="${c.id}">👋 Check out</button>`:""}
+      ${can("checkin")&&st.code!=="in"?`<button class="btn green no-print" data-act="doCheckin" data-id="${c.id}">✅ Check in now</button>`:""}
+      ${can("undoCheckin")&&st.code==="in"?`<button class="btn ghost no-print" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Undo check-in (mistake)</button>`:""}
+      ${can("editChild")?`<button class="btn ghost no-print" data-act="editChild" data-id="${c.id}">✏️ Edit details</button>`:""}
     </div>`;
 }
 
 function renderAllergies(){
   const day=state.day;
-  const list=sortedChildren().filter(hasAlert);
+  const list=sortedChildren().filter(c=>hasAlert(c)&&passFilters(c));
   const rows=list.map(c=>{
     const st=statusOf(c,day).code;
     return `<div class="kid" data-act="child" data-id="${c.id}">
       <div class="avatar" style="background:var(--red-bg);color:var(--red)">${esc(initials(c))}</div>
       <div class="info"><div class="nm">${esc(fullName(c))} ${st==="in"?'<span class="status in" style="font-size:11px">Here</span>':""}</div>
-        <div class="meta">${esc(c.crew)} · ${esc(gradeLabel(c.grade))}</div>
+        <div class="meta">${esc(c.crew)} · ${esc(gradeLabel(c.grade))}${childRoom(c)?" · "+esc(childRoom(c)):""}</div>
         ${c.allergies?`<div class="v warn" style="font-size:15px;margin-top:4px">⚠️ ${esc(c.allergies)}</div>`:""}
         ${c.medical?`<div class="v med" style="font-size:15px;margin-top:2px">✚ ${esc(c.medical)}</div>`:""}
       </div></div>`;
-  }).join("") || `<div class="empty">No allergy or medical notes on file. 🎉</div>`;
+  }).join("") || `<div class="empty">No allergy or medical notes match. 🎉</div>`;
   app.innerHTML = topbar("Allergies & Medical", list.length+" children flagged", true, true) + `
     <div class="content">
       <div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">Snack &amp; crew teams: check this before serving food or activities.</div>
+      ${filterBar({})}
       <div class="list">${rows}</div>
-      <button class="btn ghost no-print" data-act="printRoster" style="margin-top:16px">🖨️ Print this list</button>
+      <button class="btn ghost no-print" data-act="printAllergies" style="margin-top:16px">🖨️ Print this list</button>
     </div>`;
 }
-
-function renderVolunteers(){
-  const rows=DATA.volunteers.map(v=>`<div class="kid" style="cursor:default">
-    <div class="avatar">${esc((v.name[0]||"")+((v.name.split(" ")[1]||" ")[0]||""))}</div>
-    <div class="info"><div class="nm">${esc(v.name)}</div><div class="meta">${esc(v.role||"Volunteer")}${v.phone?" · "+esc(v.phone):""}</div></div>
-  </div>`).join("") || `<div class="empty">No volunteers added yet.</div>`;
-  app.innerHTML = topbar("Volunteers", DATA.volunteers.length+" helpers", true, false) + `
-    <div class="content">
-      <div class="list">${rows}</div>
-      <div class="form panel" style="margin-top:16px">
-        <h3 style="font-size:16px">Add a volunteer</h3>
-        <label>Name</label><input id="vname" placeholder="First Last">
-        <label>Role (optional)</label><input id="vrole" placeholder="Crew leader, Snack team…">
-        <button class="btn blue" data-act="saveVol" style="margin-top:14px">Add volunteer</button>
-      </div>
-    </div>`;
-}
-
-function renderPickDay(){
-  const rows=CONFIG.dates.map(d=>`<button class="pick ${d===state.day?'sel':''}" data-act="chooseDay" data-d="${d}">
-    <div style="font-weight:700">${dayName(d)}</div>
-    <div class="r">${d===defaultDay()?"Today":""}</div></button>`).join("");
-  app.innerHTML = topbar("Choose day","",true,false) + `<div class="content"><h2 class="sect">Event days</h2>${rows}</div>`;
-}
-
 function renderEditChild(){
-  const c=state.editChild||{id:"",first:"",last:"",grade:"K",crew:CONFIG.crews[0],allergies:"",medical:"",photoConsent:true,guardians:[{name:"",phone:"",relationship:"Mother",canPickup:true}],emergency:{name:"",phone:"",relationship:""}};
+  const blank={id:"",familyId:"",first:"",last:"",grade:"K4",gender:"",dob:"",crew:CONFIG.crews[0],attendsCDC:false,cdcRoom:"",community:true,days:["Mon","Tue","Wed","Thu"],allergies:"",medical:"",comments:"",
+    parent:{first:"",last:"",email:"",phone:"",altPhone:"",street:"",city:"Jackson",state:"WI",zip:"",photoConsent:true,emergency:{name:"",relationship:"",phone:""},altPickup:{name:"",phone:""}},extraPickups:[]};
+  const c=state.editChild?JSON.parse(JSON.stringify(state.editChild)):blank;
+  if(!c.parent) c.parent=blank.parent;
+  if(!c.parent.emergency) c.parent.emergency={name:"",relationship:"",phone:""};
+  if(!c.parent.altPickup) c.parent.altPickup={name:"",phone:""};
   const isNew=!c.id;
-  const g0=(c.guardians&&c.guardians[0])||{name:"",phone:"",relationship:"Mother"};
-  const g1=(c.guardians&&c.guardians[1])||{name:"",phone:"",relationship:"Father"};
-  const em=c.emergency||{name:"",phone:"",relationship:""};
+  const p=c.parent;
   const crewOpts=CONFIG.crews.map(cr=>`<option ${c.crew===cr?"selected":""}>${esc(cr)}</option>`).join("");
   const gradeOpts=["K4","K5","1","2","3","4","5"].map(gr=>`<option ${c.grade===gr?"selected":""}>${gr}</option>`).join("");
+  const genderOpts=["","F","M"].map(g=>`<option value="${g}" ${c.gender===g?"selected":""}>${g==="F"?"Female":g==="M"?"Male":"—"}</option>`).join("");
+  const dayChk=["Mon","Tue","Wed","Thu"].map(d=>`<label class="toggle" style="flex:1"><input type="checkbox" class="f_day" value="${d}" ${(c.days||[]).includes(d)?"checked":""}>${d}</label>`).join("");
+  const hasFam=!!c.familyId && DATA.children.some(x=>x.familyId===c.familyId&&x.id!==c.id);
   app.innerHTML = topbar(isNew?"Add child":"Edit child","",true,false) + `
     <div class="content form">
       <div class="two"><div><label>First name</label><input id="f_first" value="${esc(c.first)}"></div>
         <div><label>Last name</label><input id="f_last" value="${esc(c.last)}"></div></div>
       <div class="two"><div><label>Grade</label><select id="f_grade">${gradeOpts}</select></div>
         <div><label>Crew</label><select id="f_crew">${crewOpts}</select></div></div>
+      <div class="two"><div><label>Gender</label><select id="f_gender">${genderOpts}</select></div>
+        <div><label>Date of birth</label><input id="f_dob" type="date" value="${esc(c.dob||"")}"></div></div>
+      <label>Days attending</label><div style="display:flex;gap:8px">${dayChk}</div>
+      <div class="chk"><input type="checkbox" id="f_cdc" ${c.attendsCDC?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">🧸 Attends CDC (child-care center) — uncheck for a community child</label></div>
+      <label>CDC room number (if CDC)</label><input id="f_room" value="${esc(c.cdcRoom||"")}" placeholder="Room 3">
       <label>Allergies (leave blank if none)</label><input id="f_all" value="${esc(c.allergies)}" placeholder="e.g. Peanuts, Dairy">
       <label>Medical notes</label><textarea id="f_med" placeholder="Asthma, EpiPen location, care plan…">${esc(c.medical)}</textarea>
-      <div class="chk"><input type="checkbox" id="f_photo" ${c.photoConsent?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">Photo / media consent given</label></div>
-      <div class="chk"><input type="checkbox" id="f_community" ${c.community?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">🔵 Community child (not CDC) — signed pickup</label></div>
+      <label>Comments</label><textarea id="f_notes" placeholder="Anything else the team should know">${esc(c.comments||"")}</textarea>
 
-      <h2 class="sect">Guardian 1 (authorized pickup)</h2>
-      <div class="two"><div><label>Name</label><input id="g0_name" value="${esc(g0.name)}"></div>
-        <div><label>Relationship</label><input id="g0_rel" value="${esc(g0.relationship)}"></div></div>
-      <label>Phone</label><input id="g0_phone" value="${esc(g0.phone)}" inputmode="tel">
-
-      <h2 class="sect">Guardian 2 (optional)</h2>
-      <div class="two"><div><label>Name</label><input id="g1_name" value="${esc(g1.name)}"></div>
-        <div><label>Relationship</label><input id="g1_rel" value="${esc(g1.relationship)}"></div></div>
-      <label>Phone</label><input id="g1_phone" value="${esc(g1.phone)}" inputmode="tel">
+      <h2 class="sect">Parent / guardian (applies to the whole family)</h2>
+      <div class="two"><div><label>First name</label><input id="p_first" value="${esc(p.first||"")}"></div>
+        <div><label>Last name</label><input id="p_last" value="${esc(p.last||"")}"></div></div>
+      <label>Email</label><input id="p_email" type="email" value="${esc(p.email||"")}">
+      <div class="two"><div><label>Phone</label><input id="p_phone" inputmode="tel" value="${esc(p.phone||"")}"></div>
+        <div><label>Alt phone</label><input id="p_alt" inputmode="tel" value="${esc(p.altPhone||"")}"></div></div>
+      <label>Street</label><input id="p_street" value="${esc(p.street||"")}">
+      <div class="two"><div><label>City</label><input id="p_city" value="${esc(p.city||"")}"></div>
+        <div><label>State</label><input id="p_state" value="${esc(p.state||"")}"></div></div>
+      <label>Zip</label><input id="p_zip" inputmode="numeric" value="${esc(p.zip||"")}">
+      <div class="chk"><input type="checkbox" id="p_photo" ${p.photoConsent!==false?"checked":""}><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">📷 Photo / media consent given (parent-level — applies to all their kids)</label></div>
 
       <h2 class="sect">Emergency contact</h2>
-      <div class="two"><div><label>Name</label><input id="e_name" value="${esc(em.name)}"></div>
-        <div><label>Phone</label><input id="e_phone" value="${esc(em.phone)}" inputmode="tel"></div></div>
+      <div class="two"><div><label>Name</label><input id="e_name" value="${esc(p.emergency.name||"")}"></div>
+        <div><label>Relationship</label><input id="e_rel" value="${esc(p.emergency.relationship||"")}"></div></div>
+      <label>Phone</label><input id="e_phone" inputmode="tel" value="${esc(p.emergency.phone||"")}">
+
+      <h2 class="sect">Alternate pickup (besides parent)</h2>
+      <div class="two"><div><label>Name</label><input id="a_name" value="${esc(p.altPickup.name||"")}"></div>
+        <div><label>Phone</label><input id="a_phone" inputmode="tel" value="${esc(p.altPickup.phone||"")}"></div></div>
+
+      ${hasFam?`<div class="chk"><input type="checkbox" id="p_apply" checked><label style="margin:0;text-transform:none;font-size:16px;color:var(--ink)">Apply this parent/pickup info to siblings too</label></div>`:""}
 
       <button class="btn blue" data-act="saveChild" style="margin-top:18px">Save child</button>
       <button class="btn ghost" data-act="back">Cancel</button>
     </div>`;
 }
 
+function renderVolunteers(){
+  const canEdit=can("editVolunteer")||currentRoleKey()==="director"||currentRoleKey()==="asst";
+  const dayFilter=state.fVolDay;
+  const list=DATA.volunteers.filter(v=>!dayFilter||((v.days||[]).includes(dayFilter)));
+  const rows=list.map(v=>`<div class="kid" style="cursor:default">
+    <div class="avatar">${esc((v.name[0]||"")+((v.name.split(" ")[1]||" ")[0]||""))}</div>
+    <div class="info"><div class="nm">${esc(v.name)} <span class="pill">${ROLE_EM(v.roleKey)} ${esc(ROLE_LABEL(v.roleKey))}</span></div>
+      <div class="meta">${(v.days&&v.days.length)?esc(v.days.join(", ")):"All days"}${v.phone?" · "+esc(v.phone):""}${v.email?" · "+esc(v.email):""}</div></div>
+  </div>`).join("") || `<div class="empty">No volunteers match.</div>`;
+  const roleSelOpts=ROLE_DEFS.map(r=>`<option value="${r.key}">${r.label}</option>`).join("");
+  const dayOpts=["Mon","Tue","Wed","Thu"].map(d=>`<option value="${d}" ${dayFilter===d?"selected":""}>${d}</option>`).join("");
+  app.innerHTML = topbar("Volunteers", DATA.volunteers.length+" helpers", true, false) + `
+    <div class="content">
+      <div class="filters"><select data-filter="fVolDay"><option value="">All days</option>${dayOpts}</select></div>
+      <div class="list">${rows}</div>
+      ${canEdit?`<div class="form panel" style="margin-top:16px">
+        <h3 style="font-size:16px">Add a volunteer</h3>
+        <label>Name</label><input id="vname" placeholder="First Last">
+        <label>Role</label><select id="vrolekey">${roleSelOpts}</select>
+        <div class="two"><div><label>Email</label><input id="vemail" type="email"></div>
+          <div><label>Phone</label><input id="vphone" inputmode="tel"></div></div>
+        <button class="btn blue" data-act="saveVol" style="margin-top:14px">Add volunteer</button>
+        <p class="mini" style="margin-top:8px">Roles decide what each person sees when we go live. Their login is created in Supabase by the director.</p>
+      </div>`:`<p class="mini">Only the director or assistant directors can add or change volunteers.</p>`}
+    </div>`;
+}
+
 function renderSchedule(){
+  const legend = CONFIG.stations.map(s=>{const l=locFor(s);return `<span class="gchip"><b>${esc(s)}</b>${l?` <span class="arw">→</span> <span class="locbadge">${esc(l)}</span>`:` <span class="mini">location TBD</span>`}</span>`;}).join("");
   const rows=CONFIG.schedule.map(s=>{
-    if(s.all) return `<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")}</div></div>`;
-    const chips=CONFIG.crews.map(g=>`<span class="gchip"><span class="dot" style="background:${CONFIG.crewColors[g]||'#999'}"></span><b>${esc(g)}</b> <span class="arw">→</span> ${esc((s.assign&&s.assign[g])||"—")}</span>`).join("");
+    if(s.all){ const l=locFor(s.station); return `<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")}${l?` · <span class="locbadge">${esc(l)}</span>`:""}</div></div>`; }
+    const chips=CONFIG.crews.map(g=>{const stn=(s.assign&&s.assign[g])||"—";const l=locFor(stn);return `<span class="gchip"><span class="dot" style="background:${CONFIG.crewColors[g]||'#999'}"></span><b>${esc(g)}</b> <span class="arw">→</span> ${esc(stn)}${l?` <span class="locbadge">(${esc(l)})</span>`:""}</span>`;}).join("");
     return `<div class="slot"><div class="t">🕐 ${esc(s.time)}${s.label?` · ${esc(s.label)}`:""}</div><div class="assign">${chips}</div></div>`;
   }).join("");
   app.innerHTML = topbar("Daily Schedule", dayName(state.day), true, true) + `
     <div class="content">
-      <div class="banner">Where each crew is through the day — 4 rotations of 20 min, plus everyone together for opening, Treetop Treats snack, and closing. Crew start-spots can be fine-tuned.</div>
+      <div class="banner">Where each crew is through the day — 4 rotations of 20 min, plus everyone together for opening, Treetop Treats snack, and closing.</div>
+      ${can("scheduleEdit")?`<button class="btn ghost no-print" data-act="scheduleLoc" style="margin:0 0 12px">✏️ Edit station locations</button>`:""}
+      <h2 class="sect">Stations &amp; locations</h2>
+      <div class="assign" style="margin-bottom:14px">${legend}</div>
       ${rows}
+    </div>`;
+}
+
+function renderScheduleLoc(){
+  const keys=Object.keys(CONFIG.stationLocations);
+  const inputs=keys.map(k=>`<label>${esc(k)}</label><input class="f_loc" data-station="${esc(k)}" value="${esc(locFor(k))}" placeholder="Location">`).join("");
+  app.innerHTML = topbar("Edit locations","Director / assistant / pastor",true,false) + `
+    <div class="content form">
+      <div class="banner">Set where each station and all-together block happens. These show on the schedule for everyone.</div>
+      ${inputs}
+      <button class="btn blue" data-act="saveLoc" style="margin-top:16px">Save locations</button>
+      <button class="btn ghost" data-act="back">Cancel</button>
     </div>`;
 }
 
 function renderCalendar(){
   const fmt = d => new Date(d+"T12:00:00").toLocaleDateString([], {weekday:"long", month:"long", day:"numeric"});
   const dated = CONFIG.eventCalendar.filter(e=>e.date).sort((a,b)=>a.date.localeCompare(b.date));
-  const tbd = CONFIG.eventCalendar.filter(e=>e.tbd);
   const card = e => {
     const isVbs = e.date && CONFIG.dates.includes(e.date);
     const sub = [e.time, e.location, e.note].filter(Boolean).map(esc).join(" · ");
@@ -773,14 +1151,8 @@ function renderCalendar(){
     <div class="content">
       <div class="banner">The whole VBS timeline in one place — setup, the four mornings, teardown, and the celebration. Everyone on the team sees the same dates.</div>
       ${dated.map(card).join("")}
-      ${tbd.length?`<h2 class="sect">📌 Still to schedule</h2>
-        <div class="banner" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">Send Chief the real dates + times and these fill in automatically.</div>
-        ${tbd.map(e=>`<div class="slot" style="border-style:dashed">
-          <div class="t" style="color:var(--muted)">Date &amp; time TBD</div>
-          <div style="font-weight:700;font-size:16px;margin-top:3px">${esc(e.title)}</div></div>`).join("")}`:""}
     </div>`;
 }
-
 function renderKitchen(){
   const day=state.day;
   const cards=CONFIG.crews.map(grp=>{
@@ -800,8 +1172,74 @@ function renderKitchen(){
   const totalAllergic=DATA.children.filter(c=>statusOf(c,day).code==="in"&&c.allergies&&c.allergies.trim()).length;
   app.innerHTML = topbar("Snack Team", dayName(state.day), true, true) + `
     <div class="content">
-      <div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">🍎 Treetop Treats — 10:04–10:24, all crews together. <b>${totalPresent}</b> kids here, <b>${totalAllergic}</b> with allergies. Counts + allergies by crew below. “Here” = checked in today.</div>
+      <div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">🍎 Treetop Treats — 10:04–10:24, all crews together. <b>${totalPresent}</b> kids here, <b>${totalAllergic}</b> with allergies. Counts + allergies by crew below. "Here" = checked in today.</div>
+      <button class="btn ghost no-print" data-act="printSnack" style="margin:0 0 14px">🖨️ Print snack sheet for the team</button>
       ${cards}
+    </div>`;
+}
+
+function renderAnnouncements(){
+  const anns=DATA.announcements||[];
+  const rows=anns.map(a=>`<div class="ann">
+    <div class="txt">${esc(a.text)}</div>
+    ${a.image?`<img src="${esc(a.image)}" alt="">`:""}
+    <div class="who">📣 ${esc(a.by||"Team")} · ${new Date(a.at).toLocaleString()} ${(currentRoleKey()==="director"||currentRoleKey()==="asst")?`· <a class="link" data-act="delAnn" data-id="${a.id}">delete</a>`:""}</div>
+  </div>`).join("") || `<div class="empty">No announcements yet.</div>`;
+  app.innerHTML = topbar("Announcements","Team news for the day",true,false) + `
+    <div class="content">
+      ${can("announcePost")?`<div class="form panel">
+        <h3 style="font-size:16px">Post an announcement</h3>
+        <textarea id="ann_text" placeholder="Daily Bible point, lunch reminder, games moved indoors for heat…"></textarea>
+        <label>Picture of the day (optional image link)</label><input id="ann_img" placeholder="https://…">
+        <button class="btn blue" data-act="postAnn" style="margin-top:12px">Post to the team</button>
+      </div>`:""}
+      ${rows}
+    </div>`;
+}
+
+function renderExport(){
+  const s=eventStats();
+  const rowsHtml=[
+    ["Registered",s.reg],
+    ["Attended at least one day",s.attendedAny],
+    ["Highest daily attendance",s.highest],
+    ["Average daily attendance",`${s.avg} (range ${s.dmin}–${s.dmax})`],
+    ["Community kids — attended at least one day",s.commAny],
+    ["Volunteers and staff",s.vols]
+  ].map(r=>`<div class="field"><div class="k">${esc(r[0])}</div><div class="v" style="font-weight:700">${esc(String(r[1]))}</div></div>`).join("");
+  const perDay=CONFIG.dates.map((d,i)=>`<div class="field"><div class="k">${esc(dayName(d))}</div><div class="v">${s.daily[i]} checked in</div></div>`).join("");
+  app.innerHTML = topbar("Reports & Export","Leadership numbers",true,false) + `
+    <div class="content">
+      <div class="banner">The five leadership numbers Todd tracks, computed live. Download as a spreadsheet for the report, or print it.</div>
+      <div class="panel"><h3 style="font-size:16px">Summary — 2026</h3>${rowsHtml}</div>
+      <div class="panel"><h3 style="font-size:16px">Daily attendance</h3>${perDay}</div>
+      <button class="btn blue" data-act="dlSummary">⬇️ Download summary (opens in Excel)</button>
+      <button class="btn ghost" data-act="dlFull">⬇️ Download full data (every child, every day)</button>
+      <button class="btn ghost" data-act="printStats">🖨️ Print summary</button>
+    </div>`;
+}
+
+function renderImport(){
+  app.innerHTML = topbar("Import roster","From the Google Form spreadsheet",true,false) + `
+    <div class="content form">
+      <div class="banner">Paste rows straight from the Google Form responses sheet (copy the cells, including the header row, and paste below). Chief matches the columns to the app's fields. One child per row for now; the exact multi-child-per-parent layout locks in once we have the real export file.</div>
+      <label>Paste spreadsheet rows (tab or comma separated)</label>
+      <textarea id="imp_data" style="min-height:150px" placeholder="First Name	Last Name	Grade	Crew	Allergies	Parent Email …"></textarea>
+      <button class="btn ghost" data-act="impSample" style="margin-top:10px">Load a sample to see the format</button>
+      <button class="btn blue" data-act="impPreview">Preview import</button>
+      <div id="imp_out"></div>
+    </div>`;
+}
+function renderRolePicker(){
+  const rows=ROLE_DEFS.map(r=>`<div class="rolerow ${currentRoleKey()===r.key?'sel':''}" data-act="setRole" data-role="${r.key}">
+    <span class="em">${r.em}</span>
+    <div style="flex:1"><div style="font-weight:700">${esc(r.label)}</div><div class="mini">${esc(r.note)}</div></div>
+    ${currentRoleKey()===r.key?'<span style="color:var(--primary);font-weight:800">✓</span>':''}
+  </div>`).join("");
+  app.innerHTML = topbar("Preview a role","Demo only — see what each person sees",true,false) + `
+    <div class="content">
+      <div class="banner">Tap a role to see the app exactly as that person will. In the live version each volunteer signs in and gets their role automatically — this switcher is just so you can preview it.</div>
+      ${rows}
     </div>`;
 }
 
@@ -829,6 +1267,7 @@ function renderConsent(){
   const con=c.consent;
   app.innerHTML = topbar("Parent Consent", fullName(c), true, false) + `
     <div class="content">
+      <div class="banner">Not used for VBS 2026 — kept here for when the church moves registration into the app. Todd asked to hold this for a future year.</div>
       <div class="panel">
         <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700">Consent &amp; release</div>
         <p style="font-size:14.5px;color:var(--slate);line-height:1.55;margin:8px 0 0">${esc(CONSENT_TEXT)}</p>
@@ -856,7 +1295,7 @@ function renderLogin(err){
       <img src="assets/rainforest-falls.png" alt="Rainforest Falls VBS" style="width:200px;max-width:74%;display:block;margin:0 auto 4px">
       <div style="text-align:center;color:var(--gold);font-weight:700;font-size:13.5px;margin-bottom:16px">${esc(CONFIG.tagline)}</div>
       <h2>Sign in</h2>
-      <p>Admin team only. Use the shared login your director gave you.</p>
+      <p>Team members only. Use the login your director set up for you.</p>
       ${err?`<div class="login-err">${esc(err)}</div>`:``}
       <div class="form">
         <label>Email</label><input id="lg_email" type="email" autocomplete="username" inputmode="email" placeholder="you@church.org">
@@ -906,15 +1345,21 @@ function renderInfo(){
         <h3>Mode: ${LIVE?"🟢 Live (synced)":"🧪 Demo (this phone only)"}</h3>
         <p>${LIVE?"Check-ins sync across every volunteer's phone in real time.":"You're testing with sample kids. Nothing here is saved to the cloud, and it won't show up on other phones. When you're happy with how it works, we switch on live sync."}</p>
       </div>
+      ${LIVE?"":`<div class="panel">
+        <h3>Preview a role 🎭</h3>
+        <p>See exactly what each volunteer will — director, check-in, snack team, CDC teacher, and so on. The menu and screens change to match.</p>
+        <button class="btn ghost no-print" data-act="rolepick">${ROLE_EM(currentRoleKey())} Viewing as: ${esc(ROLE_LABEL(currentRoleKey()))} — switch</button>
+      </div>`}
+      ${can("addChild")?`<div class="panel"><h3>Import the roster</h3><p>Bring in children and parents from the Google Form spreadsheet.</p><button class="btn ghost no-print" data-act="import">⬆️ Import from spreadsheet</button></div>`:""}
       <div class="panel">
         <h3>Keeping kids safe</h3>
         <p>• Only release a child to a guardian shown on their record. If unsure, check ID and ask the check-in lead.</p>
         <p>• Every check-out records who picked up and when.</p>
-        <p>• The app is password-protected in live mode. Nothing is stored on your phone.</p>
+        <p>• The app is password-protected in live mode, and each person's role controls what they can see.</p>
       </div>
       <div class="panel">
         <h3>Print a paper backup</h3>
-        <p>Each morning, tap <b>Roster → Print today's roster</b>. Keep a paper copy at the table in case wifi drops.</p>
+        <p>Each morning, tap <b>Roster → Print &amp; reports</b>. Keep a paper copy at the table in case wifi drops.</p>
       </div>
       <div class="panel">
         <h3>After the event</h3>
@@ -927,60 +1372,277 @@ function renderInfo(){
     </div>`;
 }
 
+function renderPickDay(){
+  const rows=CONFIG.dates.map(d=>`<button class="pick ${d===state.day?'sel':''}" data-act="chooseDay" data-d="${d}">
+    <div style="font-weight:700">${dayName(d)}</div>
+    <div class="r">${d===defaultDay()?"Today":""}</div></button>`).join("");
+  app.innerHTML = topbar("Choose day","",true,false) + `<div class="content"><h2 class="sect">Event days</h2>${rows}</div>`;
+}
 /* ============================================================
    PRINT
    ============================================================ */
-function printRoster(){
-  const day=state.day;
-  const rows=sortedChildren().map(c=>{
-    const st=statusOf(c,day);
-    return `<tr>
-      <td>${esc(fullName(c))}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td>
-      <td>${esc([c.allergies,c.medical].filter(Boolean).join("; ")||"")}</td>
-      <td>${esc((c.guardians||[]).map(g=>g.name+(g.phone?" "+g.phone:"")).join(" / "))}</td>
-      <td style="width:70px"></td><td style="width:70px"></td></tr>`;
-  }).join("");
+function printHTML(title, bodyHtml){
   const w=window.open("","_blank");
-  w.document.write(`<html><head><title>VBS Roster ${day}</title>
-    <style>body{font-family:Arial;font-size:12px;padding:16px}h2{margin:0}table{width:100%;border-collapse:collapse;margin-top:10px}
-    th,td{border:1px solid #999;padding:5px;text-align:left;vertical-align:top}th{background:#eee}</style></head>
-    <body><h2>${esc(CONFIG.eventName)}</h2><div>${dayName(day)} — paper backup</div>
-    <table><thead><tr><th>Child</th><th>Gr</th><th>Crew</th><th>Allergy / Medical</th><th>Guardians</th><th>In</th><th>Out</th></tr></thead>
-    <tbody>${rows}</tbody></table></body></html>`);
-  w.document.close(); setTimeout(()=>w.print(),300);
+  if(!w){ toast("Allow pop-ups to print"); return; }
+  w.document.write(`<html><head><title>${esc(title)}</title>
+    <style>body{font-family:Arial;font-size:12px;padding:16px;color:#111}
+    h2{margin:0 0 2px}.sub{color:#555;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse;margin-top:8px;page-break-inside:auto}
+    tr{page-break-inside:avoid}th,td{border:1px solid #999;padding:5px;text-align:left;vertical-align:top}
+    th{background:#eee}h3{margin:16px 0 4px;border-bottom:2px solid #333;padding-bottom:2px}
+    .flag{font-weight:bold}.blue{color:#2f6fb0}.red{color:#c62828}</style></head>
+    <body><h2>${esc(CONFIG.eventName)}</h2>${bodyHtml}</body></html>`);
+  w.document.close(); setTimeout(()=>{try{w.print();}catch(e){}},350);
+}
+function commTag(c){ return isCommunity(c)?'<span class="blue flag">Community</span>':(childRoom(c)?esc(childRoom(c)):"CDC"); }
+function rosterTable(list, withStatus, day){
+  const head=`<tr><th>Child</th><th>Gr</th><th>Crew</th><th>CDC room / type</th><th>Allergy / Medical</th>${withStatus?"<th>In</th><th>Out</th>":""}</tr>`;
+  const rows=list.map(c=>`<tr>
+    <td>${esc(fullName(c))}${childPhoto(c)===false?' <span class="red flag">NO PHOTO</span>':''}</td>
+    <td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
+    <td>${esc([c.allergies,c.medical].filter(Boolean).join("; "))}</td>
+    ${withStatus?"<td style='width:60px'></td><td style='width:60px'></td>":""}</tr>`).join("");
+  return `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+}
+function printToday(){
+  const day=state.day, list=sortedChildren().filter(c=>registeredForDay(c,day));
+  printHTML("Roster "+day, `<div class="sub">${dayName(day)} — check-in sheet (paper backup)</div>`+rosterTable(list,true,day));
+}
+function printByCrewFor(day, whole){
+  const base=sortedChildren().filter(c=>whole?true:registeredForDay(c,day));
+  let body=`<div class="sub">${whole?"Entire event":dayName(day)} — by crew</div>`;
+  CONFIG.crews.forEach(cr=>{ const g=base.filter(c=>c.crew===cr); if(!g.length)return;
+    body+=`<h3>${esc(cr)} crew (${g.length})</h3>`+rosterTable(g,!whole,day); });
+  printHTML("By crew", body);
+}
+function printAllAZ(){
+  printHTML("Full roster", `<div class="sub">Entire event — alphabetical (${DATA.children.length})</div>`+rosterTable(sortedChildren(),false));
+}
+function printDetail(){
+  const rows=sortedChildren().map(c=>{
+    const g=guardiansFor(c).map(x=>x.name+(x.phone?" "+x.phone:"")).join(" / ");
+    const em=emergencyFor(c);
+    return `<tr><td>${esc(fullName(c))}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
+      <td>${esc([c.allergies,c.medical].filter(Boolean).join("; "))}</td>
+      <td>${esc(g)}</td><td>${em?esc(em.name+(em.phone?" "+em.phone:"")):""}</td></tr>`;
+  }).join("");
+  printHTML("Full detail", `<div class="sub">Tech-outage backup — all contacts</div>
+    <table><thead><tr><th>Child</th><th>Gr</th><th>Crew</th><th>Type/Room</th><th>Allergy/Medical</th><th>Authorized pickup</th><th>Emergency</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+function printAllergiesList(){
+  const list=sortedChildren().filter(hasAlert).filter(passFilters);
+  const rows=list.map(c=>`<tr><td>${esc(fullName(c))}</td><td>${esc(c.crew)}</td><td>${childRoom(c)?esc(childRoom(c)):(isCommunity(c)?"Community":"CDC")}</td>
+    <td class="red">${esc(c.allergies||"")}</td><td>${esc(c.medical||"")}</td></tr>`).join("");
+  printHTML("Allergies", `<div class="sub">Allergy &amp; medical list${state.fCrew?" — "+esc(state.fCrew)+" crew":""}</div>
+    <table><thead><tr><th>Child</th><th>Crew</th><th>Room/Type</th><th>Allergies</th><th>Medical</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+function printSnackSheet(){
+  const day=state.day;
+  let body=`<div class="sub">${dayName(day)} — Treetop Treats snack (all crews, 10:04–10:24)</div>`;
+  CONFIG.crews.forEach(grp=>{
+    const inGroup=DATA.children.filter(c=>c.crew===grp);
+    const present=inGroup.filter(c=>statusOf(c,day).code==="in").length;
+    const allergic=inGroup.filter(c=>c.allergies&&c.allergies.trim());
+    body+=`<h3>${esc(grp)} crew — ${present} here / ${inGroup.length} total</h3>`;
+    body+= allergic.length
+      ? `<table><thead><tr><th>Child</th><th>Allergy</th></tr></thead><tbody>${allergic.map(c=>`<tr><td>${esc(fullName(c))}</td><td class="red">${esc(c.allergies)}</td></tr>`).join("")}</tbody></table>`
+      : `<div>No allergies in this crew.</div>`;
+  });
+  printHTML("Snack sheet", body);
+}
+function printStatsSheet(){
+  const s=eventStats();
+  const rows=[["Registered",s.reg],["Attended at least one day",s.attendedAny],["Highest daily attendance",s.highest],
+    ["Average daily attendance",`${s.avg} (range ${s.dmin}–${s.dmax})`],["Community kids — attended at least one day",s.commAny],["Volunteers and staff",s.vols]]
+    .map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(String(r[1]))}</td></tr>`).join("");
+  printHTML("VBS summary", `<div class="sub">Leadership summary — ${CONFIG.eventName} 2026</div>
+    <table><thead><tr><th>Metric</th><th>2026</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 
+/* ============================================================
+   EXPORT (CSV that Excel opens)
+   ============================================================ */
+function downloadFile(name, text, mime){
+  const blob=new Blob(["﻿"+text],{type:(mime||"text/csv")+";charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1200);
+}
+function csvCell(v){ v=(v==null?"":String(v)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+function toCSV(rows){ return rows.map(r=>r.map(csvCell).join(",")).join("\r\n"); }
+function exportSummary(){
+  const s=eventStats();
+  const rows=[["Metric","2026"],
+    ["Registered",s.reg],["Attended at least one day",s.attendedAny],
+    ["Highest daily attendance",s.highest],["Average daily attendance",s.avg],["Average range",`${s.dmin}-${s.dmax}`],
+    ["Community kids - attended at least one day",s.commAny],["Volunteers and staff",s.vols],
+    [],["Day","Checked in"]];
+  CONFIG.dates.forEach((d,i)=>rows.push([dayName(d),s.daily[i]]));
+  downloadFile("VBS-summary-2026.csv", toCSV(rows));
+  toast("⬇️ Summary downloaded");
+}
+function exportFull(){
+  const head=["First","Last","Grade","Gender","DOB","Crew","Type","CDC Room","Days","Allergies","Medical","Comments","Photo consent","Parent","Parent email","Parent phone","Emergency","Alt pickup"];
+  CONFIG.dates.forEach(d=>{head.push(dayShort(d)+" In");head.push(dayShort(d)+" Out");head.push(dayShort(d)+" Released to");});
+  const rows=[head];
+  sortedChildren().forEach(c=>{
+    const p=c.parent||{}, em=emergencyFor(c)||{};
+    const r=[c.first,c.last,c.grade,c.gender,c.dob,c.crew,isCommunity(c)?"Community":"CDC",childRoom(c),(c.days||[]).join(" "),
+      c.allergies,c.medical,c.comments,childPhoto(c)?"Yes":"No",
+      [p.first,p.last].filter(Boolean).join(" "),p.email||"",p.phone||"",
+      em.name?em.name+(em.phone?" "+em.phone:""):"",(p.altPickup&&p.altPickup.name)?p.altPickup.name:""];
+    CONFIG.dates.forEach(d=>{const a=(DATA.attendance[d]||{})[c.id]||{};r.push(a.inAt?fmtTime(a.inAt):"");r.push(a.outAt?fmtTime(a.outAt):"");r.push(a.releasedTo||"");});
+    rows.push(r);
+  });
+  downloadFile("VBS-full-data-2026.csv", toCSV(rows));
+  toast("⬇️ Full data downloaded");
+}
+
+/* ============================================================
+   IMPORT (Google Form responses -> children)
+   Header matchers use Todd's documented field labels. Final
+   column names lock in when the real export file arrives.
+   ============================================================ */
+function normHead(h){ return String(h||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+const IMPORT_MAP=[
+  {test:h=>/^(child)?first(name)?$/.test(h)||h==="firstname", set:(c,v)=>c.first=v},
+  {test:h=>/^(child)?last(name)?$/.test(h)||h==="lastname", set:(c,v)=>c.last=v},
+  {test:h=>h==="grade", set:(c,v)=>c.grade=v},
+  {test:h=>h==="gender", set:(c,v)=>c.gender=v},
+  {test:h=>h.includes("dateofbirth")||h==="dob", set:(c,v)=>c.dob=v},
+  {test:h=>h==="crew"||h.includes("crewcolor"), set:(c,v)=>c.crew=v},
+  {test:h=>h.includes("cdcroom")||h==="room"||h==="roomnumber", set:(c,v)=>c.cdcRoom=v},
+  {test:h=>h.includes("attendscdc")||h==="cdc", set:(c,v)=>c.attendsCDC=/^(y|yes|true|1)/i.test(v)},
+  {test:h=>h.includes("daysattending")||h==="days", set:(c,v)=>c.days=parseDays(v)},
+  {test:h=>h==="allergies"||h.includes("allergy"), set:(c,v)=>c.allergies=v},
+  {test:h=>h.includes("medical"), set:(c,v)=>c.medical=v},
+  {test:h=>h.includes("comment"), set:(c,v)=>c.comments=v},
+  {test:h=>h.includes("photo"), set:(c,v)=>c.parent.photoConsent=/^(y|yes|true|1)/i.test(v)},
+  {test:h=>h.includes("parentfirst"), set:(c,v)=>c.parent.first=v},
+  {test:h=>h.includes("parentlast"), set:(c,v)=>c.parent.last=v},
+  {test:h=>h.includes("parentemail")||h==="email", set:(c,v)=>c.parent.email=v},
+  {test:h=>h.includes("parentphone")||(h.includes("phone")&&!h.includes("alt")&&!h.includes("emergency")), set:(c,v)=>c.parent.phone=v},
+  {test:h=>h.includes("alternatephone")||h.includes("altphone")||h.includes("parentalternate"), set:(c,v)=>c.parent.altPhone=v},
+  {test:h=>h.includes("street"), set:(c,v)=>c.parent.street=v},
+  {test:h=>h.includes("city"), set:(c,v)=>c.parent.city=v},
+  {test:h=>h==="state"||h.includes("parentstate"), set:(c,v)=>c.parent.state=v},
+  {test:h=>h.includes("zip"), set:(c,v)=>c.parent.zip=v},
+  {test:h=>h.includes("emergencycontactname")||h.includes("emergencyname"), set:(c,v)=>c.parent.emergency.name=v},
+  {test:h=>h.includes("emergencycontactrelationship")||h.includes("emergencyrelationship"), set:(c,v)=>c.parent.emergency.relationship=v},
+  {test:h=>h.includes("emergencycontactphone")||h.includes("emergencyphone"), set:(c,v)=>c.parent.emergency.phone=v},
+  {test:h=>h.includes("alternatepickupname")||h.includes("altpickupname")||h.includes("pickupname"), set:(c,v)=>c.parent.altPickup.name=v},
+  {test:h=>h.includes("alternatepickupphone")||h.includes("altpickupphone")||h.includes("pickupphone"), set:(c,v)=>c.parent.altPickup.phone=v}
+];
+function parseDays(v){ const out=[]; const s=String(v).toLowerCase(); [["mon","Mon"],["tue","Tue"],["wed","Wed"],["thu","Thu"]].forEach(([k,d])=>{if(s.includes(k))out.push(d);}); return out.length?out:["Mon","Tue","Wed","Thu"]; }
+function splitRows(text){
+  const lines=text.replace(/\r/g,"").split("\n").filter(l=>l.trim().length);
+  const delim = (lines[0]||"").indexOf("\t")>=0 ? "\t" : ",";
+  return lines.map(l=>{
+    if(delim==="\t") return l.split("\t");
+    const out=[];let cur="",q=false;
+    for(let i=0;i<l.length;i++){const ch=l[i];
+      if(q){ if(ch==='"'){ if(l[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else { if(ch===','){out.push(cur);cur="";} else if(ch==='"'){q=true;} else cur+=ch; }
+    } out.push(cur); return out;
+  });
+}
+function parseImport(text){
+  const rows=splitRows(text); if(rows.length<2) return {children:[],headers:[],unmapped:[]};
+  const headers=rows[0].map(h=>h.trim());
+  const norm=headers.map(normHead);
+  const mappers=norm.map(h=>IMPORT_MAP.find(m=>m.test(h))||null);
+  const unmapped=headers.filter((h,i)=>!mappers[i]);
+  const byEmail={}; const children=[];
+  for(let r=1;r<rows.length;r++){
+    const cells=rows[r]; if(!cells.join("").trim()) continue;
+    const c={id:uid(),familyId:"",first:"",last:"",grade:"",gender:"",dob:"",crew:CONFIG.crews[0],attendsCDC:false,cdcRoom:"",community:true,days:["Mon","Tue","Wed","Thu"],allergies:"",medical:"",comments:"",
+      parent:{first:"",last:"",email:"",phone:"",altPhone:"",street:"",city:"",state:"",zip:"",photoConsent:true,emergency:{name:"",relationship:"",phone:""},altPickup:{name:"",phone:""}},extraPickups:[],consent:null};
+    headers.forEach((h,i)=>{ const m=mappers[i]; if(m) m.set(c,(cells[i]||"").trim()); });
+    if(!c.first&&!c.last) continue;
+    c.community=!c.attendsCDC;
+    if(!c.parent.first&&!c.parent.last&&(c.parent.email)){ c.parent.last=c.last; }
+    const key=(c.parent.email||"").toLowerCase();
+    if(key){ if(!byEmail[key]) byEmail[key]=uid(); c.familyId=byEmail[key]; } else c.familyId=uid();
+    children.push(c);
+  }
+  return {children,headers,unmapped};
+}
 /* ============================================================
    EVENTS
    ============================================================ */
 function focusSearch(){
   const s=app.querySelector("[data-search]");
   if(s){s.addEventListener("input",e=>{state.search=e.target.value;
-    // re-render just the list without losing focus: full render then refocus
     const pos=e.target.selectionStart; render();
     const n=app.querySelector("[data-search]"); if(n){n.focus();n.setSelectionRange(pos,pos);}
   });}
 }
 
 app.addEventListener("change",e=>{
-  const sel=e.target.closest("[data-act='setvol']");
-  if(sel){state.currentVolunteer=sel.value;localStorage.setItem("vbs_vol",sel.value);}
+  const t=e.target;
+  const sel=t.closest("[data-act='setvol']");
+  if(sel){ state.currentVolunteer=sel.value; localStorage.setItem("vbs_vol",sel.value); return; }
+  if(t.hasAttribute("data-filter")){ state[t.getAttribute("data-filter")]=t.value; render(); return; }
+  if(t.hasAttribute("data-toggle")){ state[t.getAttribute("data-toggle")]=t.checked; render(); return; }
 });
+
+let lastImport=null;
+function collectChildForm(){
+  const gv=id=>{const el=document.getElementById(id);return el?el.value.trim():"";};
+  const gc=id=>{const el=document.getElementById(id);return el?el.checked:false;};
+  const days=[...document.querySelectorAll(".f_day:checked")].map(x=>x.value);
+  const base=state.editChild?JSON.parse(JSON.stringify(state.editChild)):{};
+  const child=Object.assign(base,{
+    id:(state.editChild&&state.editChild.id)||"",
+    familyId:(state.editChild&&state.editChild.familyId)||uid(),
+    first:gv("f_first"),last:gv("f_last"),grade:gv("f_grade"),gender:gv("f_gender"),dob:gv("f_dob"),crew:gv("f_crew"),
+    attendsCDC:gc("f_cdc"),cdcRoom:gv("f_room"),days:days.length?days:["Mon","Tue","Wed","Thu"],
+    allergies:gv("f_all"),medical:gv("f_med"),comments:gv("f_notes"),
+    parent:{first:gv("p_first"),last:gv("p_last"),email:gv("p_email"),phone:gv("p_phone"),altPhone:gv("p_alt"),
+      street:gv("p_street"),city:gv("p_city"),state:gv("p_state"),zip:gv("p_zip"),photoConsent:gc("p_photo"),
+      emergency:{name:gv("e_name"),relationship:gv("e_rel"),phone:gv("e_phone")},
+      altPickup:{name:gv("a_name"),phone:gv("a_phone")}},
+    extraPickups:(state.editChild&&state.editChild.extraPickups)||[]
+  });
+  child.community=!child.attendsCDC;
+  return child;
+}
 
 app.addEventListener("click",async e=>{
   const el=e.target.closest("[data-act]"); if(!el)return;
   const act=el.getAttribute("data-act"); const id=el.getAttribute("data-id");
   switch(act){
-    case "back": history.length; go(prevView()); break;
+    case "back": go(prevView()); break;
+    case "home": go("home"); break;
     case "checkin": go("checkin"); break;
     case "checkout": go("checkout"); break;
     case "roster": go("roster"); break;
+    case "reports": go("reports"); break;
     case "allergies": go("allergies"); break;
     case "schedule": go("schedule"); break;
+    case "scheduleLoc": go("scheduleLoc"); break;
     case "kitchen": go("kitchen"); break;
     case "calendar": go("calendar"); break;
+    case "announcements": go("announcements"); break;
+    case "export": go("export"); break;
+    case "import": go("import"); break;
     case "activity": go("activity"); break;
+    case "volunteers": go("volunteers"); break;
+    case "info": go("info"); break;
+    case "rolepick": go("rolepick"); break;
+    case "pickday": go("pickday",{pickReturn:state.view}); break;
+    case "chooseDay": state.day=el.getAttribute("data-d"); go(state.pickReturn||"home"); break;
+    case "statList": go("statList",{statKind:el.getAttribute("data-kind")}); break;
+    case "child": go("child",{selChild:id}); break;
     case "consent": go("consent",{selChild:id||state.selChild}); break;
+
+    case "setRole": {
+      state.currentRole=el.getAttribute("data-role");
+      localStorage.setItem("vbs_role",state.currentRole);
+      go("home"); toast(ROLE_EM(state.currentRole)+" Now viewing as "+ROLE_LABEL(state.currentRole));
+      break;
+    }
+
     case "clearSig": if(sigPad) sigPad.clear(); break;
     case "saveConsent": {
       const nm=(document.getElementById("sig_name")||{}).value||"";
@@ -992,11 +1654,7 @@ app.addEventListener("click",async e=>{
       go("child",{selChild:c.id}); toast("✍️ Consent saved for "+fullName(c));
       break;
     }
-    case "volunteers": go("volunteers"); break;
-    case "info": go("info"); break;
-    case "pickday": go("pickday"); break;
-    case "chooseDay": state.day=el.getAttribute("data-d"); go("home"); break;
-    case "child": go("child",{selChild:id}); break;
+
     case "addChild": go("editChild",{editChild:null}); break;
     case "editChild": go("editChild",{editChild:DATA.children.find(c=>c.id===(id||state.selChild))}); break;
 
@@ -1008,46 +1666,118 @@ app.addEventListener("click",async e=>{
       toast("✅ "+fullName(c)+" checked in", async()=>{await db.undoCheckIn(id,state.day);render();});
       break;
     }
-    case "toCheckout": go("checkoutConfirm",{selChild:id,selGuardian:null}); break;
+    case "toCheckout": go("checkoutConfirm",{selChild:id,selGuardian:null,addingPickup:false}); break;
     case "pickguard": state.selGuardian=parseInt(el.getAttribute("data-i"),10); render(); break;
+    case "addPickup": state.addingPickup=true; render(); break;
+    case "cancelPickup": state.addingPickup=false; render(); break;
+    case "savePickup": {
+      const nm=(document.getElementById("ap_name")||{}).value||"";
+      const ph=(document.getElementById("ap_phone")||{}).value||"";
+      if(!nm.trim()){ toast("Enter a name"); break; }
+      const c=DATA.children.find(x=>x.id===state.selChild); if(!c) break;
+      c.extraPickups=c.extraPickups||[]; c.extraPickups.push({name:nm.trim(),phone:ph.trim(),relationship:"Added at check-in"});
+      await db.saveChild(c);
+      await db.logActivity({at:nowISO(),user:actor(),action:"Added pickup "+nm.trim()+" for "+fullName(c)});
+      state.addingPickup=false; render(); toast("Added "+nm.trim()+" to pickup list");
+      break;
+    }
     case "confirmCheckout": {
       const c=DATA.children.find(x=>x.id===state.selChild);
-      const g=(c.guardians||[]).filter(x=>x.canPickup!==false)[state.selGuardian];
+      const g=guardiansFor(c)[state.selGuardian];
       await db.checkOut(c.id,state.day,g?g.name:"",actor());
       await db.logActivity({at:nowISO(),user:actor(),action:"Checked out "+fullName(c)+" to "+(g?g.name:"guardian")});
       go("checkout");
       toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian"));
       break;
     }
+    case "undoCheckinConfirm": {
+      const c=DATA.children.find(x=>x.id===id); if(!c) break;
+      await db.undoCheckIn(c.id,state.day);
+      await db.logActivity({at:nowISO(),user:actor(),action:"Undid check-in for "+fullName(c)});
+      go("checkout"); toast("↩️ Check-in undone for "+fullName(c));
+      break;
+    }
+
     case "saveChild": {
-      const gv=id=>document.getElementById(id).value.trim();
-      const guardians=[];
-      if(gv("g0_name")) guardians.push({name:gv("g0_name"),phone:gv("g0_phone"),relationship:gv("g0_rel")||"Guardian",canPickup:true});
-      if(gv("g1_name")) guardians.push({name:gv("g1_name"),phone:gv("g1_phone"),relationship:gv("g1_rel")||"Guardian",canPickup:true});
-      const child={
-        id:(state.editChild&&state.editChild.id)||"",
-        first:gv("f_first"),last:gv("f_last"),grade:gv("f_grade"),crew:gv("f_crew"),
-        allergies:gv("f_all"),medical:document.getElementById("f_med").value.trim(),
-        photoConsent:document.getElementById("f_photo").checked,
-        community:document.getElementById("f_community").checked,
-        guardians,
-        emergency: gv("e_name")?{name:gv("e_name"),phone:gv("e_phone"),relationship:""}:null
-      };
+      const child=collectChildForm();
       if(!child.first||!child.last){toast("Please enter first and last name");break;}
       const isNewChild=!(state.editChild&&state.editChild.id);
-      await db.saveChild(child);
+      const apply=(document.getElementById("p_apply")||{}).checked;
+      await db.saveChild(child, apply);
       await db.logActivity({at:nowISO(),user:actor(),action:(isNewChild?"Added":"Edited")+" child: "+fullName(child)});
-      go("roster"); toast("Saved "+fullName(child));
+      go(isNewChild?"roster":"child",{selChild:child.id}); toast("Saved "+fullName(child));
       break;
     }
     case "saveVol": {
-      const name=document.getElementById("vname").value.trim();
+      const name=(document.getElementById("vname")||{}).value.trim();
       if(!name){toast("Enter a name");break;}
-      await db.saveVolunteer({name,role:document.getElementById("vrole").value.trim()});
+      const roleKey=(document.getElementById("vrolekey")||{}).value||"volunteer";
+      await db.saveVolunteer({name,roleKey,role:ROLE_LABEL(roleKey),email:(document.getElementById("vemail")||{}).value.trim(),phone:(document.getElementById("vphone")||{}).value.trim(),days:["Mon","Tue","Wed","Thu"]});
       go("volunteers"); toast("Added "+name);
       break;
     }
-    case "printRoster": printRoster(); break;
+
+    case "saveLoc": {
+      const map={};
+      document.querySelectorAll(".f_loc").forEach(inp=>{ map[inp.getAttribute("data-station")]=inp.value.trim(); });
+      await db.saveScheduleLoc(map);
+      go("schedule"); toast("Locations saved");
+      break;
+    }
+
+    case "postAnn": {
+      const txt=(document.getElementById("ann_text")||{}).value.trim();
+      const img=(document.getElementById("ann_img")||{}).value.trim();
+      if(!txt){ toast("Write something first"); break; }
+      await db.saveAnnouncement({id:uid(),at:nowISO(),by:actor(),text:txt,image:img});
+      await db.logActivity({at:nowISO(),user:actor(),action:"Posted an announcement"});
+      go("announcements"); toast("📣 Posted");
+      break;
+    }
+    case "delAnn": { await db.deleteAnnouncement(id); render(); toast("Deleted"); break; }
+
+    case "dlSummary": exportSummary(); break;
+    case "dlFull": exportFull(); break;
+    case "printStats": printStatsSheet(); break;
+    case "printToday": printToday(); break;
+    case "printByCrew": printByCrewFor(state.day,false); break;
+    case "printAll": printAllAZ(); break;
+    case "printAllCrew": printByCrewFor(state.day,true); break;
+    case "printDetail": printDetail(); break;
+    case "printDay": state.day=el.getAttribute("data-d"); printByCrewFor(state.day,false); break;
+    case "printAllergies": printAllergiesList(); break;
+    case "printSnack": printSnackSheet(); break;
+
+    case "impSample": {
+      const el2=document.getElementById("imp_data");
+      if(el2) el2.value="First Name\tLast Name\tGrade\tCrew\tAttends CDC\tCDC Room\tDays Attending\tAllergies\tMedical\tParent First\tParent Last\tParent Email\tParent Phone\tEmergency Contact Name\tEmergency Contact Phone\tPhoto Information\n"+
+        "Ella\tRoth\t1\tPink\tNo\t\tMon, Tue, Wed, Thu\tPeanuts\t\tMegan\tRoth\tmegan.roth@example.com\t262-555-0301\tDrew Roth\t262-555-0302\tYes\n"+
+        "Sam\tRoth\t3\tYellow\tYes\tRoom 6\tMon, Wed\t\t\tMegan\tRoth\tmegan.roth@example.com\t262-555-0301\tDrew Roth\t262-555-0302\tYes";
+      break;
+    }
+    case "impPreview": {
+      const text=(document.getElementById("imp_data")||{}).value||"";
+      lastImport=parseImport(text);
+      const out=document.getElementById("imp_out");
+      if(!lastImport.children.length){ out.innerHTML='<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">No child rows found. Include a header row and at least one child.</div>'; break; }
+      const fams=new Set(lastImport.children.map(c=>c.familyId)).size;
+      const sample=lastImport.children.slice(0,6).map(c=>`<div class="field"><div class="k">${esc(c.crew)}${c.attendsCDC?" · CDC "+esc(c.cdcRoom||""):" · Community"}</div><div class="v">${esc(fullName(c))} — ${esc(gradeLabel(c.grade))}${c.allergies?" · ⚠️ "+esc(c.allergies):""}${c.parent.email?" · "+esc(c.parent.email):""}</div></div>`).join("");
+      out.innerHTML=`<div class="panel" style="margin-top:14px"><h3 style="font-size:16px">Preview: ${lastImport.children.length} children in ${fams} famil${fams===1?"y":"ies"}</h3>
+        ${sample}${lastImport.children.length>6?`<div class="mini" style="margin-top:8px">…and ${lastImport.children.length-6} more</div>`:""}
+        ${lastImport.unmapped.length?`<div class="banner" style="margin-top:10px;background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">Columns I didn't recognize (ignored): ${esc(lastImport.unmapped.join(", "))}</div>`:""}
+        <button class="btn blue" data-act="impConfirm">✅ Import these ${lastImport.children.length} children</button></div>`;
+      break;
+    }
+    case "impConfirm": {
+      if(!lastImport||!lastImport.children.length){ toast("Nothing to import"); break; }
+      await db.importChildren(lastImport.children);
+      await db.logActivity({at:nowISO(),user:actor(),action:"Imported "+lastImport.children.length+" children from spreadsheet"});
+      const n=lastImport.children.length; lastImport=null;
+      go("roster"); toast("Imported "+n+" children");
+      break;
+    }
+
+    case "printRoster": printToday(); break;
     case "resetDemo": localStorage.removeItem(DEMO_KEY); await db.loadAll(); go("home"); toast("Demo reset"); break;
     case "login": await doLogin(); break;
     case "signout": await doLogout(); break;
@@ -1060,8 +1790,12 @@ function prevView(){
   if(v==="editChild") return state.editChild?"child":"roster";
   if(v==="consent") return "child";
   if(v==="activity") return "info";
+  if(v==="import") return "info";
+  if(v==="reports") return "roster";
+  if(v==="scheduleLoc") return "schedule";
+  if(v==="statList") return "home";
   if(v==="checkoutConfirm") return "checkout";
-  if(["checkin","checkout","roster","allergies","schedule","kitchen","calendar","volunteers","info","pickday"].includes(v)) return "home";
+  if(["checkin","checkout","roster","allergies","schedule","kitchen","calendar","volunteers","info","pickday","announcements","export","rolepick"].includes(v)) return "home";
   return "home";
 }
 
@@ -1069,7 +1803,6 @@ function prevView(){
    INIT
    ============================================================ */
 (async function init(){
-  // QA hook: open with ?preview=login to see the live sign-in screen in demo.
   if(!LIVE && location.search.includes("preview=login")){ renderLogin("Preview only — this is the live sign-in screen."); return; }
 
   if(LIVE){
@@ -1079,7 +1812,7 @@ function prevView(){
       db=liveDB;
       SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; });
       const {data}=await SB.auth.getSession();
-      if(!(data&&data.session)){ renderLogin(); return; }   // must sign in first
+      if(!(data&&data.session)){ renderLogin(); return; }
       authed=true; state.currentUser=data.session.user.email;
     }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }
   }
@@ -1089,3 +1822,4 @@ function prevView(){
 </script>
 </body>
 </html>
+

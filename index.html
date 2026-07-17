@@ -1083,10 +1083,11 @@ function volsByFirst(list){ return [...(list||DATA.volunteers)].sort((a,b)=>{
 function helperBar(){
   if(LIVE) return "";
   const opts=volsByFirst().map(v=>`<option ${v.name===state.currentVolunteer?"selected":""}>${esc(v.name)}</option>`).join("");
+  const hint = state.currentVolunteer ? "" : `<div class="mini" style="margin:-4px 4px 12px">Pick your name so check-ins and check-outs are logged under you.</div>`;
   return `<div class="helper">
-    <label>👤 Helper on duty:</label>
-    <select data-act="setvol"><option value="">— choose —</option>${opts}</select>
-  </div>`;
+    <label>👤 You are:</label>
+    <select data-act="setvol"><option value="">— pick your name —</option>${opts}</select>
+  </div>${hint}`;
 }
 
 /* ---------- identity (RSVP + chat authorship) ---------- */
@@ -1801,7 +1802,7 @@ function renderCalendar(){
     <div class="content">
       <div class="banner">${who
         ? `RSVPing as <b>${esc(meName())}</b>. Your events show at the top; the rest are below — tap Going / Maybe / Can't on each.`
-        : `Setup, the four mornings, teardown, and the celebration. ${LIVE?"Sign in":"Pick <b>Helper on duty</b> below"} to RSVP as yourself.`}</div>
+        : `Setup, the four mornings, teardown, and the celebration. ${LIVE?"Sign in":"Pick <b>your name</b> below"} to RSVP as yourself.`}</div>
       ${(!who&&!LIVE)?helperBar():""}
       ${mine.length?`<h2 class="sect">✅ My events (${mine.length})</h2>${mine.map(e=>evtCard(e,false)).join("")}`:""}
       <h2 class="sect">${mine.length?"Other events":"All events"}${who?" — tap to RSVP":""}</h2>
@@ -1863,7 +1864,7 @@ function renderChat(){
   }).join("") || `<div class="empty">No messages yet. Say hi to the team! 👋</div>`;
   app.innerHTML = topbar("Team Chat", (msgs.length||0)+" message"+(msgs.length===1?"":"s"), true, false) + `
     <div class="content">
-      ${(!meKey()&&!LIVE)?`<div class="banner">Pick <b>Helper on duty</b> to post as yourself.</div>${helperBar()}`:""}
+      ${(!meKey()&&!LIVE)?`<div class="banner">Pick <b>your name</b> to post as yourself.</div>${helperBar()}`:""}
       <div class="chatwrap">${rows}</div>
       ${meKey()?`<div class="chatbar">
         <textarea id="chat_in" placeholder="Message the whole team…" rows="1"></textarea>
@@ -2470,7 +2471,7 @@ app.addEventListener("click",async e=>{
       Object.keys(state.openGroups).forEach(k=>{if(k.indexOf(pg+"|")===0)delete state.openGroups[k];}); render(); break; }
 
     case "rsvp": {
-      if(!meKey()){ toast("Pick who you are first (Helper on duty)"); break; }
+      if(!meKey()){ toast("First, pick your name at the top"); break; }
       const ev=el.getAttribute("data-ev"), s=el.getAttribute("data-s"), cur=rsvpOf(ev);
       await db.setRSVP(ev, meKey(), cur===s?"clear":s);
       render();
@@ -2480,7 +2481,7 @@ app.addEventListener("click",async e=>{
     case "postMsg": {
       const el2=document.getElementById("chat_in"); const txt=(el2?el2.value:"").trim();
       if(!txt) break;
-      if(!meKey()){ toast("Pick who you are first (Helper on duty)"); break; }
+      if(!meKey()){ toast("First, pick your name at the top"); break; }
       await db.postMessage({id:uid(),by:meName(),byEmail:LIVE?meKey():"",at:nowISO(),text:txt});
       await db.logActivity({at:nowISO(),user:actor(),action:"Posted in team chat"});
       render();

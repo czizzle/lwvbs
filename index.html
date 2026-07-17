@@ -151,6 +151,8 @@
     padding:9px 14px;font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
   .previewbar b{font-weight:800}
   .previewbar .x{background:rgba(255,255,255,.22);border-radius:8px;padding:2px 8px;font-size:12.5px;white-space:nowrap}
+  .demobar{position:sticky;top:0;z-index:19;background:#c77f1a;color:#fff;text-align:center;
+    padding:8px 14px;font-size:13px;font-weight:700;line-height:1.3}
   .rolerow{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
     border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
   .rolerow.sel{border-color:var(--primary);background:#f2fbf5}
@@ -376,7 +378,11 @@ const CONFIG = {
   supabaseUrl:     "https://uvmptaurflsohnhnazuv.supabase.co",
   supabaseAnonKey: "sb_publishable_VdzVVoAC1I7bI0Hl2Ku-Ww_TckFaaki"
 };
-const LIVE = !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
+// Adding "?demo=1" to the URL forces the fake-kid demo even when live keys are
+// present — so the public link doubles as a no-login training sandbox for
+// volunteers. Demo mode only ever uses local sample data; it never touches Supabase.
+const FORCE_DEMO = /[?&]demo=1(&|$)/i.test(location.search);
+const LIVE = !FORCE_DEMO && !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
 
 function buildRealSchedule(groups, stations){
@@ -491,7 +497,7 @@ function uid(){ return "c"+Math.random().toString(36).slice(2,9)+Date.now().toSt
    so parent/photo/emergency/pickup info is entered ONCE per
    family and applies to all their kids (as Todd asked).
    ============================================================ */
-const DEMO_KEY = "vbs_demo_v6";
+const DEMO_KEY = "vbs_demo_v7";
 
 function seedDemo(){
   // family(): shared parent block entered once per household
@@ -512,73 +518,85 @@ function seedDemo(){
     children.forEach(c=>kids.push(mk({familyId:fid,parent,...c})));
   }
 
-  // Bauer — 2 siblings, community, shows shared-parent model
-  household({pf:"Sarah",pl:"Bauer",pe:"sarah.bauer@example.com",pp:"262-555-0111",pa:"262-555-0112",
-    en:"Linda Voss",er:"Grandmother",ep:"262-555-0199",an:"Tom Bauer",ap:"262-555-0112",photo:true},
-    [{first:"Emma",last:"Bauer",grade:"K4",gender:"F",crew:"Blue",all:"Peanuts (severe)"},
-     {first:"Owen",last:"Bauer",grade:"2",gender:"M",crew:"Purple",days:["Mon","Tue","Wed","Thu"]}]);
+  // All demo people are kid-friendly characters (Disney / Looney Tunes / Muppets /
+  // Pooh / Peanuts) — 100% fake, so this doubles as a shareable training sandbox.
+  // Duck — 3 siblings, community; shows the shared-parent (one family) model
+  household({pf:"Donald",pl:"Duck",pe:"donald.duck@example.com",pp:"262-555-0101",
+    en:"Daisy Duck",er:"Aunt",ep:"262-555-0109",an:"Scrooge McDuck",ap:"262-555-0110",photo:true},
+    [{first:"Huey",last:"Duck",grade:"K5",gender:"M",crew:"Orange"},
+     {first:"Dewey",last:"Duck",grade:"K5",gender:"M",crew:"Pink"},
+     {first:"Louie",last:"Duck",grade:"1",gender:"M",crew:"Orange"}]);
 
-  household({pf:"Karen",pl:"Schmidt",pe:"karen.schmidt@example.com",pp:"262-555-0121",
-    en:"Paul Schmidt",er:"Uncle",ep:"262-555-0122",an:"Paul Schmidt",ap:"262-555-0122"},
-    [{first:"Liam",last:"Schmidt",grade:"K5",gender:"M",crew:"Orange",cdc:true,room:"Room 3"}]);
+  // Parr (The Incredibles) — photo consent OFF, so the red no-photo dot shows
+  household({pf:"Helen",pl:"Parr",pe:"helen.parr@example.com",pp:"262-555-0102",pa:"262-555-0122",
+    en:"Bob Parr",er:"Father",ep:"262-555-0112",an:"Lucius Best",ap:"262-555-0113",photo:false},
+    [{first:"Violet",last:"Parr",grade:"5",gender:"F",crew:"Silver"},
+     {first:"Dash",last:"Parr",grade:"3",gender:"M",crew:"Yellow"},
+     {first:"Jack-Jack",last:"Parr",grade:"K4",gender:"M",crew:"Blue",cdc:true,room:"Room 3"}]);
 
-  household({pf:"Ruth",pl:"Meyer",pe:"ruth.meyer@example.com",pp:"262-555-0131",pa:"262-555-0132",
-    en:"Ruth Meyer",er:"Mother",ep:"262-555-0131",photo:false},
-    [{first:"Olivia",last:"Meyer",grade:"4",gender:"F",crew:"Silver",cdc:true,room:"Room 5",med:"Asthma — inhaler in backpack",days:["Mon","Tue","Wed","Thu"]}]);
+  household({pf:"Minnie",pl:"Mouse",pe:"minnie.mouse@example.com",pp:"262-555-0103",
+    en:"Mickey Mouse",er:"Uncle",ep:"262-555-0104",an:"Mickey Mouse",ap:"262-555-0104"},
+    [{first:"Morty",last:"Mouse",grade:"2",gender:"M",crew:"Purple"}]);
 
-  household({pf:"Amy",pl:"Wagner",pe:"amy.wagner@example.com",pp:"262-555-0141",
-    en:"Greg Wagner",er:"Father",ep:"262-555-0142",an:"Greg Wagner",ap:"262-555-0142"},
-    [{first:"Noah",last:"Wagner",grade:"1",gender:"M",crew:"Pink",all:"Bee stings — EpiPen in bag",days:["Mon","Wed","Thu"]}]);
+  household({pf:"Bugs",pl:"Bunny",pe:"bugs.bunny@example.com",pp:"262-555-0105",
+    en:"Granny",er:"Grandmother",ep:"262-555-0106",an:"Lola Bunny",ap:"262-555-0111"},
+    [{first:"Buster",last:"Bunny",grade:"K4",gender:"M",crew:"Green",all:"Carrots (mild)"},
+     {first:"Babs",last:"Bunny",grade:"K5",gender:"F",crew:"Orange"}]);
 
-  household({pf:"Beth",pl:"Fischer",pe:"beth.fischer@example.com",pp:"262-555-0151",pa:"262-555-0152",
-    en:"Beth Fischer",er:"Mother",ep:"262-555-0151"},
-    [{first:"Ava",last:"Fischer",grade:"2",gender:"F",crew:"Purple",cdc:true,room:"Room 4"}]);
+  household({pf:"Petunia",pl:"Pig",pe:"petunia.pig@example.com",pp:"262-555-0107",
+    en:"Porky Pig",er:"Father",ep:"262-555-0107"},
+    [{first:"Porky",last:"Pig",grade:"K5",gender:"M",crew:"Pink",cdc:true,room:"Room 4"}]);
 
-  household({pf:"Julie",pl:"Weber",pe:"julie.weber@example.com",pp:"262-555-0161",
-    en:"Steve Weber",er:"Father",ep:"262-555-0162",an:"Steve Weber",ap:"262-555-0162"},
-    [{first:"Mason",last:"Weber",grade:"5",gender:"M",crew:"Silver",days:["Mon","Tue","Wed","Thu"]}]);
+  household({pf:"Charles",pl:"Brown",pe:"charlie.brown@example.com",pp:"262-555-0108",
+    en:"Lucy van Pelt",er:"Neighbor",ep:"262-555-0118",an:"Linus van Pelt",ap:"262-555-0118"},
+    [{first:"Charlie",last:"Brown",grade:"4",gender:"M",crew:"Silver"},
+     {first:"Sally",last:"Brown",grade:"1",gender:"F",crew:"Pink",days:["Mon","Wed","Thu"]}]);
 
-  household({pf:"Nina",pl:"Becker",pe:"nina.becker@example.com",pp:"262-555-0171",
-    en:"Grandma Rose",er:"Grandmother",ep:"262-555-0173",an:"Grandma Rose",ap:"262-555-0173",photo:false},
-    [{first:"Sophia",last:"Becker",grade:"1",gender:"F",crew:"Pink",cdc:true,room:"Room 3",all:"Dairy"}]);
+  household({pf:"Kermit",pl:"Frog",pe:"kermit.frog@example.com",pp:"262-555-0114",
+    en:"Miss Piggy",er:"Family Friend",ep:"262-555-0124"},
+    [{first:"Robin",last:"Frog",grade:"K5",gender:"M",crew:"Orange"}]);
 
-  household({pf:"Kate",pl:"Hoffmann",pe:"kate.hoffmann@example.com",pp:"262-555-0181",
-    en:"Joe Hoffmann",er:"Father",ep:"262-555-0182",an:"Joe Hoffmann",ap:"262-555-0182"},
-    [{first:"Lucas",last:"Hoffmann",grade:"2",gender:"M",crew:"Purple",days:["Tue","Wed","Thu"]}]);
+  household({pf:"Mufasa",pl:"Lion",pe:"mufasa.lion@example.com",pp:"262-555-0115",
+    en:"Sarabi Lion",er:"Mother",ep:"262-555-0116",an:"Rafiki",ap:"262-555-0117"},
+    [{first:"Simba",last:"Lion",grade:"2",gender:"M",crew:"Purple"},
+     {first:"Kiara",last:"Lion",grade:"K5",gender:"F",crew:"Pink"}]);
 
-  household({pf:"Dana",pl:"Keller",pe:"dana.keller@example.com",pp:"262-555-0191",pa:"262-555-0192",
-    en:"Dana Keller",er:"Mother",ep:"262-555-0191"},
-    [{first:"Mia",last:"Keller",grade:"3",gender:"F",crew:"Yellow",cdc:true,room:"Room 6",med:"Type 1 diabetic — see care plan in office"}]);
+  household({pf:"Marlin",pl:"Fish",pe:"marlin.fish@example.com",pp:"262-555-0130",
+    en:"Dory",er:"Family Friend",ep:"262-555-0131"},
+    [{first:"Nemo",last:"Fish",grade:"1",gender:"M",crew:"Purple",all:"Shellfish"}]);
 
-  household({pf:"Lisa",pl:"Braun",pe:"lisa.braun@example.com",pp:"262-555-0201",
-    en:"Tim Braun",er:"Father",ep:"262-555-0202",an:"Tim Braun",ap:"262-555-0202"},
-    [{first:"Ethan",last:"Braun",grade:"4",gender:"M",crew:"Yellow",days:["Mon","Tue","Wed","Thu"]}]);
+  household({pf:"Winnie",pl:"Bear",pe:"pooh.bear@example.com",pp:"262-555-0119",
+    en:"Christopher Robin",er:"Family Friend",ep:"262-555-0120",an:"Piglet",ap:"262-555-0121",photo:true},
+    [{first:"Roo",last:"Bear",grade:"K4",gender:"M",crew:"Green",cdc:true,room:"Room 3",all:"Honey"}]);
 
-  household({pf:"Anne",pl:"Vogel",pe:"anne.vogel@example.com",pp:"262-555-0211",pa:"262-555-0212",
-    en:"Anne Vogel",er:"Mother",ep:"262-555-0211"},
-    [{first:"Charlotte",last:"Vogel",grade:"1",gender:"F",crew:"Orange",cdc:true,room:"Room 3"}]);
+  household({pf:"Po",pl:"Panda",pe:"po.panda@example.com",pp:"262-555-0123",
+    en:"Mr. Ping",er:"Father",ep:"262-555-0125"},
+    [{first:"Lei Lei",last:"Panda",grade:"K5",gender:"F",crew:"Pink"}]);
 
-  household({pf:"Erin",pl:"Schulz",pe:"erin.schulz@example.com",pp:"262-555-0241",
-    en:"Nate Schulz",er:"Father",ep:"262-555-0242",an:"Nate Schulz",ap:"262-555-0242"},
-    [{first:"Jack",last:"Schulz",grade:"2",gender:"M",crew:"Red",all:"Gluten (celiac)",days:["Mon","Tue","Thu"]}]);
+  household({pf:"Big",pl:"Bird",pe:"big.bird@example.com",pp:"262-555-0127",
+    en:"Gordon Robinson",er:"Neighbor",ep:"262-555-0128",an:"Susan Robinson",ap:"262-555-0128"},
+    [{first:"Elmo",last:"Bird",grade:"K4",gender:"M",crew:"Blue",cdc:true,room:"Room 4"},
+     {first:"Zoe",last:"Bird",grade:"K5",gender:"F",crew:"Orange"}]);
 
   const volunteers=[
-    {id:uid(),name:"Todd Klumb",   roleKey:"director",email:"toddklumb@gmail.com",       phone:"262-707-4666",days:["Mon","Tue","Wed","Thu"]},
-    {id:uid(),name:"Susie Klumb",  roleKey:"asst",    email:"susieklumb4@live.com",      phone:"",days:["Mon","Tue","Wed","Thu"]},
-    {id:uid(),name:"Karen Kloehn", roleKey:"asst",    email:"",                          phone:"",days:["Mon","Tue","Wed","Thu"]},
-    {id:uid(),name:"Pastor Davis", roleKey:"pastor",  email:"pastor.davis@mylivingword.com",phone:"",days:["Mon","Thu"]},
-    {id:uid(),name:"Bridget Smedal",roleKey:"snack",  email:"bridget.smedal@gmail.com",  phone:"",days:["Mon","Tue","Wed","Thu"]},
-    {id:uid(),name:"Karen Kentopp",roleKey:"checkin", email:"kjkentopp@gmail.com",       phone:"",days:["Mon","Tue","Wed","Thu"]},
-    {id:uid(),name:"Crystal Zurn", roleKey:"station",  email:"crystalzurn@gmail.com",     phone:"",days:["Mon","Tue","Wed","Thu"]}
+    {id:uid(),name:"Mickey Mouse",   roleKey:"director", email:"mickey.mouse@example.com",   phone:"262-555-0001",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Mary Poppins",   roleKey:"asst",     email:"mary.poppins@example.com",   phone:"262-555-0002",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Friar Tuck",     roleKey:"pastor",   email:"friar.tuck@example.com",     phone:"262-555-0003",days:["Mon","Thu"]},
+    {id:uid(),name:"Chef Remy",      roleKey:"snack",    email:"chef.remy@example.com",      phone:"262-555-0004",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Sheriff Woody",  roleKey:"checkin",  email:"sheriff.woody@example.com",  phone:"262-555-0005",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Ms. Frizzle",    roleKey:"cdc",      email:"ms.frizzle@example.com",     phone:"262-555-0006",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Buzz Lightyear", roleKey:"station",  email:"buzz.lightyear@example.com", phone:"262-555-0007",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Olaf",           roleKey:"crew",     email:"olaf@example.com",           phone:"262-555-0008",days:["Mon","Tue","Wed","Thu"]},
+    {id:uid(),name:"Goofy",          roleKey:"volunteer",email:"goofy@example.com",          phone:"262-555-0009",days:["Mon","Tue","Wed","Thu"]}
   ];
   const now=new Date(), ago=m=>new Date(now.getTime()-m*60000).toISOString();
   const activity=[
-    {at:ago(3),  user:"Karen Kentopp", action:"Checked in Emma Bauer (Blue crew)"},
-    {at:ago(8),  user:"Karen Kentopp", action:"Signed in"},
-    {at:ago(40), user:"Todd Klumb",    action:"Edited child details: Olivia Meyer"}
+    {at:ago(3),  user:"Sheriff Woody", action:"Checked in Huey Duck (Orange crew)"},
+    {at:ago(8),  user:"Sheriff Woody", action:"Signed in"},
+    {at:ago(40), user:"Mickey Mouse",  action:"Edited child details: Simba Lion"}
   ];
   const announcements=[
-    {id:uid(),at:ago(20),by:"Todd Klumb",text:"Welcome team! Day 1 — please arrive by 8:30 to get your crews ready. Water bottles are by the sanctuary doors.",image:""}
+    {id:uid(),at:ago(20),by:"Mickey Mouse",text:"Welcome team! Day 1 — please arrive by 8:30 to get your crews ready. Water bottles are by the sanctuary doors.",image:""}
   ];
   return {children:kids,volunteers,attendance:{},activity,announcements,scheduleLoc:{}};
 }
@@ -996,7 +1014,10 @@ function topbar(title,sub,showBack,showDay){
   const pv = state.previewAs
     ? `<div class="previewbar" data-act="exitPreview">👁 Seeing what <b>${esc(state.previewAs.name)}</b> sees (${esc(state.previewAs.role||ROLE_LABEL(state.previewAs.roleKey))})<span class="x">✕ Exit</span></div>`
     : "";
-  return `<div class="topbar">
+  const dm = FORCE_DEMO
+    ? `<div class="demobar">🎈 DEMO — sample kids only (fun character names). Practice freely; nothing here is real or saved.</div>`
+    : "";
+  return dm + `<div class="topbar">
     <div class="row">
       ${showBack?`<button class="backbtn" data-act="back">‹</button>`:`<img class="topmark" src="assets/rainforest-falls.png" alt="">`}
       <div style="flex:1">

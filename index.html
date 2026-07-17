@@ -42,6 +42,14 @@
   .signoutbtn{background:rgba(255,255,255,.2);border:0;color:#fff;border-radius:10px;padding:6px 11px;
     font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
   .signoutbtn:active{background:rgba(255,255,255,.32)}
+  /* Quick-nav: section jump links inside the sticky header */
+  .topnav{display:flex;gap:7px;overflow-x:auto;margin-top:9px;padding-bottom:2px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .topnav::-webkit-scrollbar{display:none}
+  .topnavchip{flex:0 0 auto;background:rgba(255,255,255,.16);border:0;color:#fff;font-size:12.5px;
+    font-weight:700;padding:7px 13px;border-radius:20px;cursor:pointer;white-space:nowrap}
+  .topnavchip:active{background:rgba(255,255,255,.34)}
+  .sect{scroll-margin-top:150px}
 
   .content{flex:1;padding:16px}
   h2.sect{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:22px 4px 10px}
@@ -1022,7 +1030,7 @@ function guard(cap,view){ if(cap && !can(cap)){ renderNoAccess(view); return fal
    ============================================================ */
 const app=document.getElementById("app");
 
-function topbar(title,sub,showBack,showDay){
+function topbar(title,sub,showBack,showDay,nav){
   const pv = state.previewAs
     ? `<div class="previewbar" data-act="exitPreview">👁 Seeing what <b>${esc(state.previewAs.name)}</b> sees (${esc(state.previewAs.role||ROLE_LABEL(state.previewAs.roleKey))})<span class="x">✕ Exit</span></div>`
     : "";
@@ -1039,6 +1047,7 @@ function topbar(title,sub,showBack,showDay){
       ${showDay?`<button class="daybadge" data-act="pickday">${dayShort(state.day)} ▾</button>`:``}
       ${(LIVE&&state.currentUser)?`<button class="signoutbtn" data-act="signout" title="Sign out">Sign out</button>`:``}
     </div>
+    ${nav||""}
   </div>${pv}`;
 }
 function renderNoAccess(view){
@@ -1263,9 +1272,9 @@ function renderHome(){
       {cap:"snackView",     act:"kitchen",   ico:"🍎", t:"Snack Team",      sub:"Head counts by crew for snack time"},
       {cap:"allergiesView", act:"allergies", ico:"⚠️", t:"Allergies",       sub:"Kids with an allergy or medical note"},
     ]},
-    {title:"Team", cards:[
+    {title:"Volunteers", cards:[
+      {cap:"volunteersView",act:"volunteers",ico:"👥", t:"Volunteer list",  sub:"Who's serving, their role & days"},
       {cap:"calendar",      act:"chat",      ico:"💬", t:"Team Chat",       sub:"Message the whole volunteer team"},
-      {cap:"volunteersView",act:"volunteers",ico:"👥", t:"Volunteers",      sub:"Who's serving, their role & days"},
     ]},
     {title:"Reports & setup", cards:[
       {cap:"export",        act:"export",    ico:"📊", t:"Reports & Export",sub:"Attendance numbers & spreadsheet export"},
@@ -1277,12 +1286,14 @@ function renderHome(){
     return `<div class="homecard${acc}" data-act="${c.act}"><span class="ico">${c.ico}</span>
       <div class="body"><div class="t">${esc(c.t)}</div><div class="s">${esc(c.sub)}</div></div><span class="chev">›</span></div>`;
   };
+  const secId=s=>"sec-"+s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
   const renderGroup=g=>{
     const cards=g.cards.filter(c=>c.cap==="__always"||can(c.cap));
-    return cards.length?`<h2 class="sect">${esc(g.title)}</h2>${cards.map(homeCard).join("")}`:"";
+    return cards.length?`<h2 class="sect" id="${secId(g.title)}">${esc(g.title)}</h2>${cards.map(homeCard).join("")}`:"";
   };
-  const schedHtml=renderGroup(GROUPS[0]);            // Schedule & dates (+ Stations)
-  const restHtml=GROUPS.slice(1).map(renderGroup).join("");
+  const gMap={}; GROUPS.forEach(g=>{ gMap[g.title]=renderGroup(g); });
+  const schedHtml=gMap["Schedule & dates"];          // Schedule & dates (+ Stations)
+  const restHtml=GROUPS.slice(1).map(g=>gMap[g.title]).join("");
 
   // Announcements surface at the very top so a volunteer sees them on arrival.
   const anns=DATA.announcements||[];
@@ -1293,7 +1304,7 @@ function renderHome(){
     const empty=anns.length?"":`<div class="banner">No announcements posted yet.</div>`;
     const more=anns.length>3?`<div class="mini" style="text-align:center;margin:2px 0 6px"><a class="link" data-act="announcements">See all ${anns.length} ›</a></div>`:"";
     const postBtn=canPostAnn?`<button class="btn ghost no-print" data-act="announcements" style="margin:4px 0 2px">✏️ Post or manage announcements</button>`:"";
-    annBlock=`<h2 class="sect">📣 Announcements</h2>${shown}${empty}${more}${postBtn}`;
+    annBlock=`<h2 class="sect" id="sec-announcements">📣 Announcements</h2>${shown}${empty}${more}${postBtn}`;
   }
 
   const nReview=DATA.children.filter(c=>activeFlags(c).length).length;
@@ -1312,7 +1323,7 @@ function renderHome(){
     `<button class="rolechip" data-act="rolepick">${ROLE_EM(currentRoleKey())} Viewing as: ${esc(ROLE_LABEL(currentRoleKey()))} ▾</button>`;
 
   const statsBlock = `
-    <h2 class="sect">Today at a glance <span class="mini" style="text-transform:none;letter-spacing:0">(tap a number for the list)</span></h2>
+    <h2 class="sect" id="sec-glance">Today at a glance <span class="mini" style="text-transform:none;letter-spacing:0">(tap a number for the list)</span></h2>
     <div class="stats">
       <div class="stat green" data-act="statList" data-kind="in"><div class="n">${inN}</div><div class="l">✅ Here now</div></div>
       <div class="stat slate" data-act="statList" data-kind="out"><div class="n">${outN}</div><div class="l">👋 Checked out</div></div>
@@ -1321,7 +1332,19 @@ function renderHome(){
     </div>
     ${alertPresent>0?`<div class="alertbar">⚠️ ${alertPresent} child${alertPresent>1?"ren":""} here today ${alertPresent>1?"have":"has"} an allergy or medical note — <a class="link" data-act="allergies" style="color:inherit;text-decoration:underline">see list</a></div>`:``}`;
 
-  app.innerHTML = topbar(CONFIG.eventName, CONFIG.tagline, false, true) + `
+  const navSecs=[
+    ["sec-announcements","Announcements", !!annBlock],
+    ["sec-schedule-dates","Schedule",     !!schedHtml],
+    ["sec-glance",        "At a Glance",   can("dashboard")],
+    ["sec-registration",  "Check-in",      !!gMap["Registration"]],
+    ["sec-snacks-food",   "Snacks",        !!gMap["Snacks & food"]],
+    ["sec-volunteers",    "Volunteers",    !!gMap["Volunteers"]],
+    ["sec-reports-setup", "Reports",       !!gMap["Reports & setup"]],
+    ["sec-crews",         "Crews",         true],
+  ].filter(s=>s[2]);
+  const navHtml=navSecs.length>1?`<div class="topnav">${navSecs.map(s=>`<button class="topnavchip" data-act="jump" data-sec="${s[0]}">${esc(s[1])}</button>`).join("")}</div>`:"";
+
+  app.innerHTML = topbar(CONFIG.eventName, CONFIG.tagline, false, true, navHtml) + `
     <div class="content">
       ${LIVE?"":(state.realLoaded
         ? `<div class="banner" style="background:#fdeaea;border-color:#f3c9c9;color:#8a1c1c">🔒 REAL roster loaded on THIS device only (local, not synced across phones). Treat this like real family data. ${roleChip}</div>`
@@ -1333,7 +1356,7 @@ function renderHome(){
       ${can("dashboard")?statsBlock:""}
       ${restHtml}
 
-      <h2 class="sect">Crews — here now</h2>
+      <h2 class="sect" id="sec-crews">Crews — here now</h2>
       ${crewRows}
       <div class="brandfoot">
         <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}">
@@ -2473,6 +2496,13 @@ app.addEventListener("click",async e=>{
   switch(act){
     case "back": go(prevView()); break;
     case "home": go("home"); break;
+    case "jump": {
+      const t=document.getElementById(el.getAttribute("data-sec"));
+      if(t){ const head=document.querySelector(".topbar");
+        const off=head?head.getBoundingClientRect().bottom:0;
+        window.scrollTo({top:t.getBoundingClientRect().top+window.scrollY-off-6,behavior:"smooth"}); }
+      break;
+    }
     case "checkin": go("checkin"); break;
     case "checkout": go("checkout"); break;
     case "roster": go("roster"); break;

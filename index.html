@@ -279,6 +279,38 @@
   .statgrid3{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
   .lock{background:var(--green-bg);border:1px solid #c3e6cf;color:#0b5c2e;border-radius:10px;padding:6px 10px;font-size:12.5px;font-weight:700;display:inline-block}
 
+  /* Sign-in: email / phone toggle + one-time code */
+  .segmented{display:flex;gap:6px;background:var(--slate-bg);border-radius:14px;padding:5px;margin-bottom:18px}
+  .seg{flex:1;border:0;background:transparent;color:var(--slate);font-size:14px;font-weight:700;
+    padding:11px 8px;border-radius:10px;cursor:pointer}
+  .seg.on{background:var(--card);color:var(--primary);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .code-in{text-align:center;letter-spacing:.5em;font-size:26px!important;font-weight:800;font-variant-numeric:tabular-nums}
+
+  /* Pickup-text link button */
+  .btn.sms{background:#0f9aa6;color:#fff;text-decoration:none;display:block}
+
+  /* Station board */
+  .boardcard{background:var(--card);border:1px solid var(--line);border-left:7px solid var(--primary);
+    border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow)}
+  .boardcard.snack{border-left-color:var(--gold)}
+  .boardcard .bh{display:flex;align-items:baseline;gap:10px}
+  .boardcard .bt{font-weight:800;font-size:18px;flex:1}
+  .boardcard .bloc{color:var(--teal);font-weight:700;font-size:13.5px}
+  .boardcard .bcount{font-size:14px;color:var(--muted);font-weight:700;white-space:nowrap}
+  .boardcard .bcrew{margin-top:9px}
+  .boardcard .bwarn{display:inline-block;background:var(--red-bg);color:var(--red);border-radius:8px;
+    padding:2px 8px;font-size:12.5px;font-weight:800;margin-left:6px}
+  .boardcard .kidwrap{margin-top:3px;line-height:1.95}
+  .nowbar{background:#eef7fa;border:1px solid #c9e4ec;border-radius:12px;padding:9px 13px;font-size:14px;
+    font-weight:700;color:#0b5c6e;margin-bottom:14px}
+
+  /* Leader allergy card (My day) */
+  .allergycard{background:var(--card);border:1px solid #f3c9c9;border-left:7px solid var(--red);
+    border-radius:14px;padding:12px 14px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .allergycard .ac-hd{font-weight:800;font-size:16px;color:var(--red);margin-bottom:6px}
+  .allergycard .ac-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);cursor:pointer}
+  .allergycard .ac-detail{color:var(--red);font-weight:600;font-size:14.5px;margin-top:2px}
+
   @media print{
     .topbar,.helper,.actions,.search,.filters,.no-print{display:none!important}
     body{background:#fff;font-size:12px}
@@ -400,10 +432,21 @@ const CAPS = {
   crew:      VIEW_BASE.slice(),
   volunteer: VIEW_BASE.slice()
 };
+// ---- phone / identity (email OR SMS sign-in resolve to the same volunteer) ----
+// Normalize any phone to 10 US digits ("262-707-4666" and "+12627074666" → "2627074666").
+function normPhone(p){ let d=String(p||"").replace(/\D/g,""); if(d.length===11&&d[0]==="1") d=d.slice(1); return d.length>=10?d.slice(-10):d; }
+function toE164(p){ const d=normPhone(p); return d.length===10?"+1"+d:""; }
+// A signed-in user key is either an email ("a@b.com") or E.164 phone ("+1…").
+function sessionUserKey(u){ if(!u) return null; if(u.email) return String(u.email); if(u.phone) return "+"+String(u.phone).replace(/^\+/,""); return null; }
+function volMatchesUser(v,k){
+  if(!v||!k) return false;
+  if(String(k).includes("@")) return (v.email||"").toLowerCase()===String(k).toLowerCase();
+  const kp=normPhone(k); return kp.length===10 && normPhone(v.phone)===kp;
+}
 // The signed-in person's REAL role (ignores any preview).
 function realRoleKey(){
   if(LIVE && state.currentUser){
-    const v=(DATA.volunteers||[]).find(x=>(x.email||"").toLowerCase()===String(state.currentUser).toLowerCase());
+    const v=(DATA.volunteers||[]).find(x=>volMatchesUser(x,state.currentUser));
     return (v&&v.roleKey) || "volunteer";
   }
   return state.currentRole || "director";
@@ -428,7 +471,8 @@ let state = {
   selChild:null, selGuardian:null, editChild:null, currentUser:null,
   pickReturn:"home", statKind:null,
   fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false,
-  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:"", previewAs:null
+  groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:"", previewAs:null,
+  loginMode:"email", otpSent:""
 };
 let authed = false;
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
@@ -1004,6 +1048,7 @@ function render(){
   if(v==="previewpick") return canPreview()?renderPreviewPick():renderNoAccess("Preview");
   if(v==="crewList") return renderCrewList();
   if(v==="myday") return renderMyDay();
+  if(v==="board") return can("dashboard")?renderStationBoard():renderNoAccess("Station board");
   if(v==="pickday") return renderPickDay();
   if(v==="info") return renderInfo();
   renderHome();
@@ -1025,11 +1070,12 @@ function helperBar(){
 
 /* ---------- identity (RSVP + chat authorship) ---------- */
 function meKey(){ return LIVE ? (state.currentUser||"") : (state.currentVolunteer||""); }
-function meVol(){ const k=(meKey()||"").toLowerCase(); if(!k) return null;
-  return (DATA.volunteers||[]).find(v=>LIVE?(v.email||"").toLowerCase()===k:(v.name||"").toLowerCase()===k)||null; }
+function meVol(){ const k=meKey(); if(!k) return null;
+  return (DATA.volunteers||[]).find(v=>LIVE?volMatchesUser(v,k):(v.name||"").toLowerCase()===k.toLowerCase())||null; }
 function meName(){ const v=meVol(); return v?v.name:(meKey()||"You"); }
-function volDisplay(who){ const k=(who||"").toLowerCase();
-  const v=(DATA.volunteers||[]).find(x=>LIVE?(x.email||"").toLowerCase()===k:(x.name||"").toLowerCase()===k); return v?v.name:who; }
+function volDisplay(who){
+  const v=(DATA.volunteers||[]).find(x=>LIVE?volMatchesUser(x,who):(x.name||"").toLowerCase()===(who||"").toLowerCase());
+  return v?v.name:who; }
 
 /* ---------- RSVP ---------- */
 function rsvpOf(eventId){ return (DATA.rsvps[eventId]||{})[meKey()]||""; }
@@ -1053,6 +1099,31 @@ const JOB_STATION={"bible leader":"Rooted Bible Adventures","games leader":"Wild
 // The volunteer whose view is active (the previewed person, or the signed-in user).
 function myVolForView(){ if(state.previewAs && canPreview()) return (DATA.volunteers||[]).find(v=>v.id===state.previewAs.id)||null; return meVol(); }
 function myStation(){ const v=myVolForView(); return v?(JOB_STATION[(v.role||"").toLowerCase()]||null):null; }
+
+/* ---------- pickup text (SMS the parent on check-out) ----------
+   Two paths, both live:
+   • Auto — a Supabase Edge Function ("send-sms") sends from the VBS Twilio
+     number. Preferred once deployed (supabase/functions/send-sms). Silent no-op
+     if it isn't deployed yet, so check-out never blocks.
+   • Manual — an sms: link opens the volunteer's own Messages app pre-filled.
+     Always works with zero backend; shown on the child page for checked-out kids. */
+function notifyPhone(c){ const p=c.parent||{}; if((p.phone||"").trim()) return p.phone;
+  const g=guardiansFor(c).find(x=>x.phone); return g?g.phone:""; }
+function parentLabel(c){ const p=c.parent||{}; const n=[p.first,p.last].filter(Boolean).join(" ").trim(); return n||"the parent"; }
+function pickupMessage(c,gname){
+  const t=new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  return `${CONFIG.church.replace(/ Church$/,"")} VBS: ${fullName(c)} was signed out at ${t}${gname?` to ${gname}`:""}. Thanks!`;
+}
+function smsHref(phone,msg){ const e=toE164(phone); if(!e) return "";
+  return "sms:"+e+(msg?("?&body="+encodeURIComponent(msg)):""); }
+async function trySendSms(phone,msg){
+  const e164=toE164(phone); if(!e164||!SB||!SB.functions) return false;
+  try{
+    const {data,error}=await SB.functions.invoke("send-sms",{body:{to:e164,message:msg}});
+    if(error) return false;
+    return !!(data&&(data.ok||data.sid));
+  }catch(e){ return false; }
+}
 
 /* ---------- grouping / accordion engine ---------- */
 const GROUPERS = {
@@ -1163,6 +1234,9 @@ function renderHome(){
   const myDayTile=myStation()
     ? `<div class="act wide" data-act="myday" style="background:#eef4ff;border-color:#c9dcea;color:#1a344e"><span class="ico">🗓️</span>My day — ${esc(myStation())}</div>`
     : "";
+  const boardTile=can("dashboard")
+    ? `<div class="act wide" data-act="board" style="background:#eaf6ee;border-color:#c3e6cf;color:#1a344e"><span class="ico">📍</span>Station board — who's where now</div>`
+    : "";
 
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
@@ -1192,7 +1266,7 @@ function renderHome(){
       ${helperBar()}
 
       <h2 class="sect">Do something</h2>
-      <div class="actions">${reviewTile}${myDayTile}${actionsHtml}</div>
+      <div class="actions">${reviewTile}${boardTile}${myDayTile}${actionsHtml}</div>
 
       ${can("dashboard")?statsBlock:""}
 
@@ -1321,6 +1395,7 @@ function renderCheckoutConfirm(){
       ${can("addPickup")&&!state.addingPickup?`<button class="btn ghost" data-act="addPickup">＋ Add a pickup person</button>`:""}
       ${addForm}
       ${helperBar()}
+      ${notifyPhone(c)?`<label class="chk" style="margin:14px 2px 2px"><input type="checkbox" id="co_notify" checked><span style="font-size:15px;color:var(--ink)">📱 Text ${esc(parentLabel(c))} that ${esc(c.first)} was picked up</span></label>`:""}
       <button class="btn green" data-act="confirmCheckout" ${canConfirm?"":'style="opacity:.45;pointer-events:none"'}>✅ Confirm check-out</button>
       ${can("undoCheckin")?`<button class="btn ghost" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Checked in by mistake? Undo check-in</button>`:""}
       <button class="btn ghost" data-act="back">Cancel</button>
@@ -1413,6 +1488,7 @@ function renderChild(){
         ${em?`<div class="field"><div class="k">Emergency contact</div><div class="v">${esc(em.name)} (${esc(em.relationship||"")}) ${em.phone?`· <a class="link" href="tel:${esc((em.phone||'').replace(/[^0-9]/g,''))}">${esc(em.phone)}</a>`:""}</div></div>`:""}
       </div>
       ${can("checkout")&&st.code==="in"?`<button class="btn blue no-print" data-act="toCheckout" data-id="${c.id}">👋 Check out</button>`:""}
+      ${st.code==="out"&&notifyPhone(c)&&can("checkout")?`<a class="btn sms no-print" href="${esc(smsHref(notifyPhone(c),pickupMessage(c,st.rec&&st.rec.releasedTo)))}">📱 Text ${esc(parentLabel(c))} the pickup confirmation</a>`:""}
       ${can("checkin")&&st.code!=="in"?`<button class="btn green no-print" data-act="doCheckin" data-id="${c.id}">✅ Check in now</button>`:""}
       ${can("undoCheckin")&&st.code==="in"?`<button class="btn ghost no-print" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Undo check-in (mistake)</button>`:""}
       ${can("editChild")?`<button class="btn ghost no-print" data-act="editChild" data-id="${c.id}">✏️ Edit details</button>`:""}
@@ -1538,13 +1614,28 @@ function renderMyDay(){
   if(!st){ app.innerHTML=topbar("My day","",true,false)+`
     <div class="content"><div class="banner">Your role doesn't run a rotation station, so there's no personal rotation to show. This view is for Bible, Games, Crafts, Sticky Scripture, and Snacks leaders.</div></div>`; return; }
   const anyCrews=DATA.children.filter(c=>c.crew).length>0;
+  // Leader allergy card — every child with an allergy/medical note in a crew that
+  // rotates to this station, so the leader sees the risks before the crews arrive.
+  const myCrews=new Set();
+  CONFIG.schedule.forEach(s=>{ if(s.all){ if(s.station===st) CONFIG.crews.forEach(cr=>myCrews.add(cr)); }
+    else if(s.assign){ CONFIG.crews.forEach(cr=>{ if(s.assign[cr]===st) myCrews.add(cr); }); } });
+  const flagged=sortedChildren().filter(c=>c.crew&&myCrews.has(c.crew)&&hasAlert(c));
+  const allergyCard = flagged.length ? `
+    <div class="allergycard">
+      <div class="ac-hd">⚠️ Allergy &amp; medical — ${flagged.length} kid${flagged.length>1?"s":""} coming to you</div>
+      ${flagged.map(c=>`<div class="ac-row" data-act="child" data-id="${c.id}">
+        <span class="dot" style="background:${CONFIG.crewColors[c.crew]||'#999'}"></span>
+        <div style="flex:1"><b>${esc(fullName(c))}</b> <span class="mini">${esc(c.crew)} crew</span>
+          <div class="ac-detail">${esc([c.allergies,c.medical].filter(Boolean).join("  ·  "))}</div></div>
+        <span class="chev">›</span></div>`).join("")}
+    </div>` : "";
   const rows=CONFIG.schedule.map(s=>{
     if(s.all){ return s.station===st?`<div class="slot all"><div class="t">🕐 ${esc(s.time)}</div><div class="lbl">${esc(s.label||"")} — everyone's with you</div></div>`:""; }
     const crews=CONFIG.crews.filter(cr=>s.assign&&s.assign[cr]===st);
     if(!crews.length) return "";
     const body=crews.map(cr=>{
       const kids=sortedChildren().filter(c=>c.crew===cr);
-      const kidLinks=kids.map(k=>`<a class="link" data-act="child" data-id="${k.id}">${esc(k.first)} ${esc((k.last[0]||""))}.</a> <span class="mini">${esc(/^K/.test(k.grade)?k.grade:"Gr "+k.grade)}</span>`).join(" · ");
+      const kidLinks=kids.map(k=>`<a class="link" data-act="child" data-id="${k.id}">${hasAlert(k)?"⚠️ ":""}${esc(k.first)} ${esc((k.last[0]||""))}.</a> <span class="mini">${esc(/^K/.test(k.grade)?k.grade:"Gr "+k.grade)}</span>`).join(" · ");
       return `<div style="margin-top:8px"><span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${CONFIG.crewColors[cr]||'#999'}"></span> <a class="link" data-act="crewList" data-crew="${esc(cr)}"><b>${esc(cr)} crew</b></a> (${kids.length} kids)${kids.length?`<div style="margin-top:3px;line-height:1.9">${kidLinks}</div>`:""}</div>`;
     }).join("");
     return `<div class="slot"><div class="t">🕐 ${esc(s.time)} · ${esc(s.label||"")}</div>${body}</div>`;
@@ -1552,7 +1643,74 @@ function renderMyDay(){
   app.innerHTML = topbar("My day", st, true, true)+`
     <div class="content">
       <div class="banner">Your station: <b>${esc(st)}</b>${locFor(st)?` (${esc(locFor(st))})`:""}. Here's who rotates to you and when — tap any name or crew for details.</div>
+      ${allergyCard}
       ${anyCrews?rows:`<div class="empty">Crews aren't assigned yet. Once the director sets crews, you'll see each crew's kids here, in the order they come to you.</div>`}
+    </div>`;
+}
+
+// Director/leader live view: who is at each station right now.
+function renderStationBoard(){
+  if(todayIsEventDay()) state.day=realToday();
+  const slot=currentSlot();
+  const present=c=>statusOf(c,state.day).code==="in";
+  const hereKids=DATA.children.filter(present);
+  const anyCrews=DATA.children.filter(c=>c.crew).length>0;
+
+  // one crew's present kids as clickable chips, allergy kids marked
+  const kidChips=cr=>{
+    const list=sortedChildren().filter(c=>c.crew===cr&&present(c));
+    if(!list.length) return `<span class="mini">none checked in yet</span>`;
+    return `<div class="kidwrap">${list.map(k=>`<a class="link" data-act="child" data-id="${k.id}">${hasAlert(k)?"⚠️ ":""}${esc(k.first)} ${esc((k.last[0]||""))}.</a>`).join(" · ")}</div>`;
+  };
+  const crewLine=cr=>{
+    const n=sortedChildren().filter(c=>c.crew===cr&&present(c));
+    const al=n.filter(hasAlert).length;
+    return `<div class="bcrew"><span class="dot" style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${CONFIG.crewColors[cr]||'#999'}"></span>
+      <a class="link" data-act="crewList" data-crew="${esc(cr)}"><b>${esc(cr)}</b></a> <span class="mini">(${n.length} here${al?`, ${al} allergy`:""})</span>
+      ${al?`<span class="bwarn">⚠️ ${al}</span>`:""}${kidChips(cr)}</div>`;
+  };
+
+  let cards="";
+  if(slot && slot.all){
+    // Everyone together (opening / snack / closing)
+    const al=hereKids.filter(hasAlert).length;
+    cards = `<div class="boardcard ${/snack|treat/i.test(slot.station||slot.label||"")?"snack":""}">
+      <div class="bh"><div class="bt">${esc(slot.station||slot.label||"All together")}</div>
+        <div class="bcount">${hereKids.length} here${al?` · ⚠️ ${al}`:""}</div></div>
+      ${locFor(slot.station)?`<div class="bloc">${esc(locFor(slot.station))}</div>`:""}
+      <div class="mini" style="margin-top:6px">${esc(slot.label||"")} — every crew is together right now.</div>
+      ${CONFIG.crews.map(crewLine).join("")}</div>`;
+  } else if(slot){
+    // Rotation — one card per station
+    cards = CONFIG.stations.map(stn=>{
+      const crews=CONFIG.crews.filter(cr=>stationForCrewAt(slot,cr)===stn);
+      const kids=sortedChildren().filter(c=>crews.includes(c.crew)&&present(c));
+      const al=kids.filter(hasAlert).length;
+      return `<div class="boardcard">
+        <div class="bh"><div class="bt">${esc(stn)}</div>
+          <div class="bcount">${kids.length} here${al?` · ⚠️ ${al}`:""}</div></div>
+        ${locFor(stn)?`<div class="bloc">${esc(locFor(stn))}</div>`:""}
+        ${crews.length?crews.map(crewLine).join(""):`<div class="mini" style="margin-top:8px">No crew here this rotation.</div>`}</div>`;
+    }).join("");
+  }
+
+  const bar = slot
+    ? `<div class="nowbar">🕐 Right now · ${esc(slot.time)} — ${esc(slot.label||slot.station||"")}</div>`
+    : `<div class="nowbar" style="background:var(--slate-bg);border-color:var(--line);color:var(--slate)">VBS isn't in a rotation right now (runs 9:00–11:30). Showing who's checked in by crew.</div>`;
+
+  // Out of session: fall back to a by-crew present list.
+  if(!slot){ cards = anyCrews ? CONFIG.crews.map(cr=>{
+      const kids=sortedChildren().filter(c=>c.crew===cr&&present(c));
+      const al=kids.filter(hasAlert).length;
+      return `<div class="boardcard"><div class="bh"><div class="bt">${esc(cr)} crew</div>
+        <div class="bcount">${kids.length} here${al?` · ⚠️ ${al}`:""}</div></div>${kidChips(cr)}</div>`;
+    }).join("") : `<div class="empty">No crews assigned yet.</div>`; }
+
+  app.innerHTML = topbar("Station board", hereKids.length+" kids here now", true, true) + `
+    <div class="content">
+      ${bar}
+      ${anyCrews?"":`<div class="banner">Crews aren't assigned yet — assign each child a crew (Edit child) and the board fills in automatically.</div>`}
+      ${cards||`<div class="empty">Nobody is checked in right now.</div>`}
     </div>`;
 }
 function renderSchedule(){
@@ -1800,13 +1958,40 @@ function renderConsent(){
 }
 
 function renderLogin(err){
-  const sent = state.magicSent;
-  const body = sent ? `
+  const mode = state.loginMode||"email";
+  const seg = `<div class="segmented">
+      <button class="seg ${mode==='email'?'on':''}" data-act="loginMode" data-m="email">✉️ Email link</button>
+      <button class="seg ${mode==='phone'?'on':''}" data-act="loginMode" data-m="phone">📱 Text me a code</button>
+    </div>`;
+  let body;
+  if(state.otpSent){
+    body = `
+      <h2>Enter your code 🔑</h2>
+      <p>We texted a 6-digit code to <b>${esc(state.otpSent)}</b>. Type it in and you're in.</p>
+      ${err?`<div class="login-err">${esc(err)}</div>`:``}
+      <div class="form">
+        <label>6-digit code</label>
+        <input id="lg_code" class="code-in" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+        <button class="btn blue" data-act="verifyCode" style="margin-top:16px">Sign in</button>
+        <button class="btn ghost" data-act="otpReset">Use a different number</button>
+      </div>`;
+  } else if(state.magicSent){
+    body = `
       <h2>Check your email 📬</h2>
-      <p>We sent a one-tap sign-in link to <b>${esc(sent)}</b>. Open it on this phone and you're in — no password needed.</p>
+      <p>We sent a one-tap sign-in link to <b>${esc(state.magicSent)}</b>. Open it on this phone and you're in — no password needed.</p>
       <p class="mini" style="margin-top:10px">Didn't get it within a minute? Check spam, make sure you used the email your director set up, or ask them to add you.</p>
-      <button class="btn ghost" data-act="magicReset" style="margin-top:14px">Use a different email</button>
-    ` : `
+      <button class="btn ghost" data-act="magicReset" style="margin-top:14px">Use a different email</button>`;
+  } else if(mode==='phone'){
+    body = seg + `
+      <h2>Sign in by text</h2>
+      <p>Team members only. Enter the mobile number your director set you up with and we'll text a 6-digit code.</p>
+      ${err?`<div class="login-err">${esc(err)}</div>`:``}
+      <div class="form">
+        <label>Mobile number</label><input id="lg_phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="(262) 555-0100">
+        <button class="btn blue" data-act="phoneCode" style="margin-top:16px">Text me a code</button>
+      </div>`;
+  } else {
+    body = seg + `
       <h2>Sign in</h2>
       <p>Team members only. Enter the email your director set you up with and we'll send a one-tap login link — no password to remember.</p>
       ${err?`<div class="login-err">${esc(err)}</div>`:``}
@@ -1814,6 +1999,7 @@ function renderLogin(err){
         <label>Email</label><input id="lg_email" type="email" autocomplete="username" inputmode="email" placeholder="you@email.com">
         <button class="btn blue" data-act="magicLink" style="margin-top:16px">Send my login link</button>
       </div>`;
+  }
   app.innerHTML = `
     <div class="topbar"><div class="row"><div style="flex:1"><h1>${esc(CONFIG.eventName)}</h1><div class="sub">Team sign-in</div></div></div></div>
     <div class="content"><div class="login-wrap"><div class="login-card">
@@ -1822,8 +2008,12 @@ function renderLogin(err){
       ${body}
       <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}" style="width:210px;max-width:80%;display:block;margin:22px auto 0;opacity:.9">
     </div></div></div>`;
-  const e=document.getElementById("lg_email");
-  if(e) e.addEventListener("keydown",ev=>{ if(ev.key==="Enter") sendMagicLink(); });
+  const em=document.getElementById("lg_email");
+  if(em) em.addEventListener("keydown",ev=>{ if(ev.key==="Enter") sendMagicLink(); });
+  const ph=document.getElementById("lg_phone");
+  if(ph) ph.addEventListener("keydown",ev=>{ if(ev.key==="Enter") sendPhoneCode(); });
+  const cd=document.getElementById("lg_code");
+  if(cd) cd.addEventListener("keydown",ev=>{ if(ev.key==="Enter") verifyPhoneCode(); });
 }
 async function sendMagicLink(){
   const emailEl=document.getElementById("lg_email");
@@ -1840,9 +2030,42 @@ async function sendMagicLink(){
     state.magicSent=email; renderLogin();
   }catch(err){ renderLogin("Couldn't send the link. Check wifi and try again."); }
 }
+async function sendPhoneCode(){
+  const el=document.getElementById("lg_phone");
+  const e164=toE164((el&&el.value)||"");
+  state.loginMode="phone";
+  if(!e164){ renderLogin("Enter a 10-digit U.S. mobile number."); return; }
+  if(!SB){ renderLogin("Sign-in isn't switched on yet."); return; }
+  try{
+    // shouldCreateUser:false — only numbers the director provisioned can sign in.
+    const {error}=await SB.auth.signInWithOtp({phone:e164, options:{shouldCreateUser:false}});
+    const msg=(error&&error.message)||"";
+    if(error && /provider|unsupported|disabled|not enabled/i.test(msg)){
+      renderLogin("Text sign-in isn't switched on yet — use the ✉️ Email link option for now."); return;
+    }
+    if(error && /not allowed|signups|not ?found|user/i.test(msg)){
+      renderLogin("That number isn't set up yet. Ask your director to add it, or use the email option."); return;
+    }
+    if(error){ renderLogin(msg||"Couldn't send the code. Check the number and try again."); return; }
+    state.otpSent=e164; renderLogin();
+  }catch(err){ renderLogin("Couldn't send the code. Check wifi and try again."); }
+}
+async function verifyPhoneCode(){
+  const el=document.getElementById("lg_code");
+  const token=((el&&el.value)||"").replace(/\D/g,"");
+  if(token.length<6){ renderLogin("Enter the 6-digit code from the text."); return; }
+  try{
+    const {data,error}=await SB.auth.verifyOtp({phone:state.otpSent, token, type:"sms"});
+    if(error){ renderLogin("That code didn't match. Check it and try again, or resend."); return; }
+    authed=true;
+    state.currentUser=sessionUserKey(data&&data.user)||state.otpSent;
+    state.otpSent=""; state.magicSent="";
+    await db.loadAll(); go("home");
+  }catch(err){ renderLogin("Couldn't verify the code. Try again."); }
+}
 async function doLogout(){
   try{ await SB.auth.signOut(); }catch(e){}
-  authed=false; state.currentUser=null; state.magicSent=""; renderLogin();
+  authed=false; state.currentUser=null; state.magicSent=""; state.otpSent=""; state.loginMode="email"; renderLogin();
 }
 
 function renderActivity(){
@@ -2247,6 +2470,7 @@ app.addEventListener("click",async e=>{
     case "statList": go("statList",{statKind:el.getAttribute("data-kind")}); break;
     case "crewList": go("crewList",{crewView:el.getAttribute("data-crew")}); break;
     case "myday": go("myday"); break;
+    case "board": go("board"); break;
     case "child": go("child",{selChild:id}); break;
     case "consent": go("consent",{selChild:id||state.selChild}); break;
 
@@ -2298,10 +2522,20 @@ app.addEventListener("click",async e=>{
     case "confirmCheckout": {
       const c=DATA.children.find(x=>x.id===state.selChild);
       const g=guardiansFor(c)[state.selGuardian];
+      const notify=(document.getElementById("co_notify")||{}).checked;
       await db.checkOut(c.id,state.day,g?g.name:"",actor());
       await db.logActivity({at:nowISO(),user:actor(),action:"Checked out "+fullName(c)+" to "+(g?g.name:"guardian")});
+      let smsNote="";
+      if(notify){
+        const ph=notifyPhone(c);
+        if(ph){
+          const sent=await trySendSms(ph, pickupMessage(c,g?g.name:""));
+          if(sent){ await db.logActivity({at:nowISO(),user:actor(),action:"Texted pickup confirmation to "+parentLabel(c)+" for "+fullName(c)}); smsNote=" · 📱 parent texted"; }
+          else smsNote=" · open "+c.first+" to text parent";
+        }
+      }
       go("checkout");
-      toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian"));
+      toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian")+smsNote);
       break;
     }
     case "undoCheckinConfirm": {
@@ -2434,6 +2668,10 @@ app.addEventListener("click",async e=>{
     case "resetDemo": localStorage.removeItem(DEMO_KEY); state.realLoaded=false; await db.loadAll(); go("home"); toast("Demo reset"); break;
     case "magicLink": await sendMagicLink(); break;
     case "magicReset": state.magicSent=""; renderLogin(); break;
+    case "loginMode": state.loginMode=el.getAttribute("data-m"); renderLogin(); break;
+    case "phoneCode": await sendPhoneCode(); break;
+    case "verifyCode": await verifyPhoneCode(); break;
+    case "otpReset": state.otpSent=""; renderLogin(); break;
     case "signout": await doLogout(); break;
   }
 });
@@ -2450,6 +2688,7 @@ function prevView(){
   if(v==="statList") return "home";
   if(v==="crewList") return "home";
   if(v==="myday") return "home";
+  if(v==="board") return "home";
   if(v==="flags") return "home";
   if(v==="chat") return "home";
   if(v==="checkoutConfirm") return "checkout";
@@ -2468,14 +2707,14 @@ function prevView(){
       await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
       SB=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey);
       db=liveDB;
-      SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; if(s&&s.user) state.currentUser=s.user.email; });
+      SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; if(s&&s.user) state.currentUser=sessionUserKey(s.user); });
       const {data}=await SB.auth.getSession();
       // Clean the magic-link tokens out of the URL after they've been consumed.
       if(location.hash.includes("access_token")||location.hash.includes("error=")){
         history.replaceState(null,"",location.pathname+location.search);
       }
       if(!(data&&data.session)){ renderLogin(); return; }
-      authed=true; state.currentUser=data.session.user.email;
+      authed=true; state.currentUser=sessionUserKey(data.session.user);
     }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }
   }
   await db.loadAll();

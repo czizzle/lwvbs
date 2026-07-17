@@ -1338,7 +1338,7 @@ function renderHome(){
     ["sec-snacks-food",   "Snacks",        !!gMap["Snacks & food"]],
     ["sec-volunteers",    "Volunteers",    !!gMap["Volunteers"]],
     ["sec-reports-setup", "Reports",       !!gMap["Reports & setup"]],
-    ["sec-crews",         "Crews",         true],
+    ["sec-crews",         "Attendee Groups", true],
   ].filter(s=>s[2]);
   const navHtml=navSecs.length>1?`<div class="topnav">${navSecs.map(s=>`<button class="topnavchip" data-act="jump" data-sec="${s[0]}">${esc(s[1])}</button>`).join("")}</div>`:"";
 
@@ -1354,7 +1354,7 @@ function renderHome(){
       ${can("dashboard")?statsBlock:""}
       ${restHtml}
 
-      <h2 class="sect" id="sec-crews">Crews — here now</h2>
+      <h2 class="sect" id="sec-crews">Attendee Groups — here now</h2>
       ${crewRows}
       <div class="brandfoot">
         <img src="assets/church-logo.png" alt="${esc(CONFIG.church)}">

@@ -1249,6 +1249,11 @@ function renderHome(){
   // Home cards grouped so a volunteer can tell what's behind each one without
   // tapping in. Each group renders only the cards the current role can see.
   const GROUPS=[
+    {title:"Schedule & dates", cards:[
+      {cap:"schedule",      act:"schedule",  ico:"🗓️", t:"Daily Schedule",  sub:"The morning rotation: stations, times & places"},
+      {cap:"calendar",      act:"calendar",  ico:"📅", t:"Event Calendar",  sub:"Setup, the four mornings, lunch & teardown"},
+      {cap:"dashboard",     act:"board",     ico:"📍", t:"Stations",        sub:"See who's where right now"},
+    ]},
     {title:"Registration", cards:[
       {cap:"checkin",       act:"checkin",   ico:"✅", t:"Check In",        sub:"Sign kids in as they arrive"},
       {cap:"checkout",      act:"checkout",  ico:"👋", t:"Check Out",       sub:"Release a child to their guardian"},
@@ -1257,10 +1262,6 @@ function renderHome(){
     {title:"Snacks & food", cards:[
       {cap:"snackView",     act:"kitchen",   ico:"🍎", t:"Snack Team",      sub:"Head counts by crew for snack time"},
       {cap:"allergiesView", act:"allergies", ico:"⚠️", t:"Allergies",       sub:"Kids with an allergy or medical note"},
-    ]},
-    {title:"Schedule & dates", cards:[
-      {cap:"schedule",      act:"schedule",  ico:"🗓️", t:"Daily Schedule",  sub:"The morning rotation: stations, times & places"},
-      {cap:"calendar",      act:"calendar",  ico:"📅", t:"Event Calendar",  sub:"Setup, the four mornings, lunch & teardown"},
     ]},
     {title:"Team", cards:[
       {cap:"calendar",      act:"chat",      ico:"💬", t:"Team Chat",       sub:"Message the whole volunteer team"},
@@ -1276,10 +1277,12 @@ function renderHome(){
     return `<div class="homecard${acc}" data-act="${c.act}"><span class="ico">${c.ico}</span>
       <div class="body"><div class="t">${esc(c.t)}</div><div class="s">${esc(c.sub)}</div></div><span class="chev">›</span></div>`;
   };
-  const groupsHtml=GROUPS.map(g=>{
+  const renderGroup=g=>{
     const cards=g.cards.filter(c=>c.cap==="__always"||can(c.cap));
     return cards.length?`<h2 class="sect">${esc(g.title)}</h2>${cards.map(homeCard).join("")}`:"";
-  }).join("");
+  };
+  const schedHtml=renderGroup(GROUPS[0]);            // Schedule & dates (+ Stations)
+  const restHtml=GROUPS.slice(1).map(renderGroup).join("");
 
   // Announcements surface at the very top so a volunteer sees them on arrival.
   const anns=DATA.announcements||[];
@@ -1297,7 +1300,6 @@ function renderHome(){
   const prioCard=(act,bg,bd,ink,ico,t,s)=>`<div class="homecard" data-act="${act}" style="background:${bg};border-color:${bd}"><span class="ico">${ico}</span><div class="body"><div class="t" style="color:${ink}">${t}</div><div class="s" style="color:${ink};opacity:.82">${s}</div></div><span class="chev" style="color:${ink};opacity:.5">›</span></div>`;
   const reviewTile=(isDirector()&&nReview>0)?prioCard("flags","var(--amber-bg)","#f0d9a8","#8a5a00","⚠️",`Review ${nReview} registration${nReview>1?"s":""}`,"Data checks to confirm, for Todd's report"):"";
   const myDayTile=myStation()?prioCard("myday","#eef4ff","#c9dcea","#1a344e","🗓️",`My day — ${esc(myStation())}`,"Your rotation & the kids you'll have"):"";
-  const boardTile=can("dashboard")?prioCard("board","#eaf6ee","#c3e6cf","#1a344e","📍","Station board","See who's where right now"):"";
 
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
@@ -1326,12 +1328,10 @@ function renderHome(){
         : `<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved. ${roleChip}</div>`)}
       ${helperBar()}
       ${annBlock}
-
-      <h2 class="sect">Do something</h2>
-      ${reviewTile}${boardTile}${myDayTile}
-      ${groupsHtml}
-
+      ${reviewTile}${myDayTile}
+      ${schedHtml}
       ${can("dashboard")?statsBlock:""}
+      ${restHtml}
 
       <h2 class="sect">Crews — here now</h2>
       ${crewRows}

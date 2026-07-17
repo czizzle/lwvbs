@@ -74,6 +74,18 @@
   .act.checkin{background:var(--green-bg);border-color:#c3e6cf}
   .act.checkout{background:#e7f0f6;border-color:#c9dcea}
 
+  /* Home action cards — row layout with a subtitle so each card is self-explanatory */
+  .homecard{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:13px 15px;margin-bottom:9px;box-shadow:var(--shadow);cursor:pointer}
+  .homecard:active{transform:scale(.995)}
+  .homecard .ico{font-size:24px;flex-shrink:0;width:30px;text-align:center}
+  .homecard .body{flex:1;min-width:0}
+  .homecard .t{font-weight:700;font-size:16px}
+  .homecard .s{font-size:12.5px;color:var(--muted);margin-top:1px;line-height:1.3}
+  .homecard .chev{color:#c4ccd4;font-size:22px;flex-shrink:0}
+  .homecard.checkin{background:var(--green-bg);border-color:#c3e6cf}
+  .homecard.checkout{background:#e7f0f6;border-color:#c9dcea}
+
   /* Crew rows */
   .crewline{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);
     border-radius:12px;padding:10px 14px;margin-bottom:8px}
@@ -1234,31 +1246,58 @@ function renderHome(){
   const regN=kids.filter(c=>registeredForDay(c,day)).length;
   const notN=Math.max(0, regN-inN-outN);
 
-  const A=[
-    {cap:"checkin",     act:"checkin",       cls:"act checkin", ico:"✅", t:"Check In"},
-    {cap:"checkout",    act:"checkout",      cls:"act checkout",ico:"👋", t:"Check Out"},
-    {cap:"roster",      act:"roster",        cls:"act",         ico:"📋", t:"Roster"},
-    {cap:"allergiesView",act:"allergies",    cls:"act",         ico:"⚠️", t:"Allergies"},
-    {cap:"snackView",   act:"kitchen",       cls:"act",         ico:"🍎", t:"Snack Team"},
-    {cap:"schedule",    act:"schedule",      cls:"act",         ico:"🗓️", t:"Schedule"},
-    {cap:"calendar",    act:"calendar",      cls:"act",         ico:"📅", t:"Calendar"},
-    {cap:"announce",    act:"announcements", cls:"act",         ico:"📣", t:"Announcements"},
-    {cap:"calendar",    act:"chat",          cls:"act",         ico:"💬", t:"Team Chat"},
-    {cap:"volunteersView",act:"volunteers",  cls:"act",         ico:"👥", t:"Volunteers"},
-    {cap:"export",      act:"export",        cls:"act",         ico:"📊", t:"Reports & Export"}
-  ].filter(a=>can(a.cap));
-  const actionsHtml=A.map(a=>`<div class="${a.cls}" data-act="${a.act}"><span class="ico">${a.ico}</span>${a.t}</div>`).join("")
-    + `<div class="act" data-act="info"><span class="ico">⋯</span>Info &amp; Setup</div>`;
+  // Home cards grouped so a volunteer can tell what's behind each one without
+  // tapping in. Each group renders only the cards the current role can see.
+  const GROUPS=[
+    {title:"Registration", cards:[
+      {cap:"checkin",       act:"checkin",   ico:"✅", t:"Check In",        sub:"Sign kids in as they arrive"},
+      {cap:"checkout",      act:"checkout",  ico:"👋", t:"Check Out",       sub:"Release a child to their guardian"},
+      {cap:"roster",        act:"roster",    ico:"📋", t:"Roster",          sub:"Every registered child & their details"},
+    ]},
+    {title:"Snacks & food", cards:[
+      {cap:"snackView",     act:"kitchen",   ico:"🍎", t:"Snack Team",      sub:"Head counts by crew for snack time"},
+      {cap:"allergiesView", act:"allergies", ico:"⚠️", t:"Allergies",       sub:"Kids with an allergy or medical note"},
+    ]},
+    {title:"Schedule & dates", cards:[
+      {cap:"schedule",      act:"schedule",  ico:"🗓️", t:"Daily Schedule",  sub:"The morning rotation: stations, times & places"},
+      {cap:"calendar",      act:"calendar",  ico:"📅", t:"Event Calendar",  sub:"Setup, the four mornings, lunch & teardown"},
+    ]},
+    {title:"Team", cards:[
+      {cap:"calendar",      act:"chat",      ico:"💬", t:"Team Chat",       sub:"Message the whole volunteer team"},
+      {cap:"volunteersView",act:"volunteers",ico:"👥", t:"Volunteers",      sub:"Who's serving, their role & days"},
+    ]},
+    {title:"Reports & setup", cards:[
+      {cap:"export",        act:"export",    ico:"📊", t:"Reports & Export",sub:"Attendance numbers & spreadsheet export"},
+      {cap:"__always",      act:"info",      ico:"⋯", t:"Info & Setup",    sub:"Activity log, roles, import & more"},
+    ]},
+  ];
+  const homeCard=c=>{
+    const acc=c.act==="checkin"?" checkin":c.act==="checkout"?" checkout":"";
+    return `<div class="homecard${acc}" data-act="${c.act}"><span class="ico">${c.ico}</span>
+      <div class="body"><div class="t">${esc(c.t)}</div><div class="s">${esc(c.sub)}</div></div><span class="chev">›</span></div>`;
+  };
+  const groupsHtml=GROUPS.map(g=>{
+    const cards=g.cards.filter(c=>c.cap==="__always"||can(c.cap));
+    return cards.length?`<h2 class="sect">${esc(g.title)}</h2>${cards.map(homeCard).join("")}`:"";
+  }).join("");
+
+  // Announcements surface at the very top so a volunteer sees them on arrival.
+  const anns=DATA.announcements||[];
+  const canPostAnn=can("announcePost");
+  let annBlock="";
+  if(can("announce")&&(anns.length||canPostAnn)){
+    const shown=anns.slice(0,3).map(a=>`<div class="ann"><div class="txt">${esc(a.text)}</div>${a.image?`<img src="${esc(a.image)}" alt="">`:""}<div class="who">📣 ${esc(a.by||"Team")} · ${new Date(a.at).toLocaleString()}</div></div>`).join("");
+    const empty=anns.length?"":`<div class="banner">No announcements posted yet.</div>`;
+    const more=anns.length>3?`<div class="mini" style="text-align:center;margin:2px 0 6px"><a class="link" data-act="announcements">See all ${anns.length} ›</a></div>`:"";
+    const postBtn=canPostAnn?`<button class="btn ghost no-print" data-act="announcements" style="margin:4px 0 2px">✏️ Post or manage announcements</button>`:"";
+    annBlock=`<h2 class="sect">📣 Announcements</h2>${shown}${empty}${more}${postBtn}`;
+  }
+
   const nReview=DATA.children.filter(c=>activeFlags(c).length).length;
-  const reviewTile=(isDirector()&&nReview>0)
-    ? `<div class="act wide" data-act="flags" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00"><span class="ico">⚠️</span>Review ${nReview} registration${nReview>1?"s":""} — report for Todd</div>`
-    : "";
-  const myDayTile=myStation()
-    ? `<div class="act wide" data-act="myday" style="background:#eef4ff;border-color:#c9dcea;color:#1a344e"><span class="ico">🗓️</span>My day — ${esc(myStation())}</div>`
-    : "";
-  const boardTile=can("dashboard")
-    ? `<div class="act wide" data-act="board" style="background:#eaf6ee;border-color:#c3e6cf;color:#1a344e"><span class="ico">📍</span>Station board — who's where now</div>`
-    : "";
+  const prioCard=(act,bg,bd,ink,ico,t,s)=>`<div class="homecard" data-act="${act}" style="background:${bg};border-color:${bd}"><span class="ico">${ico}</span><div class="body"><div class="t" style="color:${ink}">${t}</div><div class="s" style="color:${ink};opacity:.82">${s}</div></div><span class="chev" style="color:${ink};opacity:.5">›</span></div>`;
+  const reviewTile=(isDirector()&&nReview>0)?prioCard("flags","var(--amber-bg)","#f0d9a8","#8a5a00","⚠️",`Review ${nReview} registration${nReview>1?"s":""}`,"Data checks to confirm, for Todd's report"):"";
+  const myDayTile=myStation()?prioCard("myday","#eef4ff","#c9dcea","#1a344e","🗓️",`My day — ${esc(myStation())}`,"Your rotation & the kids you'll have"):"";
+  const boardTile=can("dashboard")?prioCard("board","#eaf6ee","#c3e6cf","#1a344e","📍","Station board","See who's where right now"):"";
 
   const crewRows=CONFIG.crews.map(cr=>{
     const present=kids.filter(c=>c.crew===cr&&statusOf(c,day).code==="in").length;
@@ -1286,9 +1325,11 @@ function renderHome(){
         ? `<div class="banner" style="background:#fdeaea;border-color:#f3c9c9;color:#8a1c1c">🔒 REAL roster loaded on THIS device only (local, not synced across phones). Treat this like real family data. ${roleChip}</div>`
         : `<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved. ${roleChip}</div>`)}
       ${helperBar()}
+      ${annBlock}
 
       <h2 class="sect">Do something</h2>
-      <div class="actions">${reviewTile}${boardTile}${myDayTile}${actionsHtml}</div>
+      ${reviewTile}${boardTile}${myDayTile}
+      ${groupsHtml}
 
       ${can("dashboard")?statsBlock:""}
 

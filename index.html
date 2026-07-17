@@ -155,6 +155,7 @@
   .ctrlbar .ctl{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:5px 10px;font-size:12.5px;color:var(--muted)}
   .ctrlbar .ctl select{border:0;background:transparent;font-size:15px;font-weight:600;color:var(--ink);padding:2px}
   .ctrlbar .chip2{background:var(--slate-bg);color:var(--slate);border:0;border-radius:12px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .ctrlbar .chip2.sel{background:var(--primary);color:#fff}
   .acc{margin-bottom:8px}
   .acchd{width:100%;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font-size:16px;font-weight:700;color:var(--ink)}
   .acchd .car{color:var(--primary);font-size:14px;width:14px;flex-shrink:0}
@@ -823,11 +824,24 @@ function statusOf(child,day){
   return {code:"in",rec:r};
 }
 function attendedAnyDay(c){ return CONFIG.dates.some(d=>{const r=(DATA.attendance[d]||{})[c.id];return r&&r.inAt;}); }
+// One shared sort feeds EVERY report/print/export. state.reportSort picks the key.
 function sortedChildren(){
+  const m=state.reportSort||"last";
+  const byLast=(a,b)=>{const x=(a.last||"").localeCompare(b.last||"");return x||(a.first||"").localeCompare(b.first||"");};
+  const byFirst=(a,b)=>{const x=(a.first||"").localeCompare(b.first||"");return x||(a.last||"").localeCompare(b.last||"");};
   return [...DATA.children].sort((a,b)=>{
-    if(a.last!==b.last)return a.last.localeCompare(b.last);
-    return a.first.localeCompare(b.first);
+    if(m==="first")return byFirst(a,b);
+    if(m==="crew"){const ci=x=>{const i=CONFIG.crews.indexOf(x.crew);return i<0?99:i;};return (ci(a)-ci(b))||byLast(a,b);}
+    return byLast(a,b);
   });
+}
+// Sort picker shown on the report screens; drives sortedChildren() everywhere.
+function sortBar(){
+  const opts=[["last","Last name"],["first","First name"],["crew","Attendee group"]];
+  const cur=state.reportSort||"last";
+  return `<div class="panel"><h3 style="font-size:15px">Sort reports by</h3>
+    <div class="ctrlbar" style="margin:2px 0 6px">${opts.map(o=>`<button class="chip2 ${cur===o[0]?'sel':''}" data-act="setSort" data-sort="${o[0]}">${o[1]}</button>`).join("")}</div>
+    <div class="mini">Applies to every printed report and the spreadsheet download.</div></div>`;
 }
 function matches(c,q){
   if(!q)return true; q=q.toLowerCase();
@@ -1517,6 +1531,7 @@ function renderReports(){
   app.innerHTML = topbar("Print & Reports","For CDC teachers, snack, and paper backup",true,false) + `
     <div class="content">
       <div class="banner">Every report shows the CDC room and the 🔵 community indicator. Good for handing the CDC teachers a paper copy, or a wifi-drop backup.</div>
+      ${sortBar()}
       <div class="panel">
         <h3 style="font-size:16px">Today (${esc(dayShort(state.day))})</h3>
         <button class="btn blue" data-act="printToday">🖨️ Today's roster (check-in sheet)</button>
@@ -1950,6 +1965,7 @@ function renderExport(){
   app.innerHTML = topbar("Reports & Export","Leadership numbers",true,false) + `
     <div class="content">
       <div class="banner">The five leadership numbers Todd tracks, computed live. Download as a spreadsheet for the report, or print it.</div>
+      ${sortBar()}
       <div class="panel"><h3 style="font-size:16px">Summary — 2026</h3>${rowsHtml}</div>
       <div class="panel"><h3 style="font-size:16px">Daily attendance</h3>${perDay}</div>
       <button class="btn blue" data-act="dlSummary">⬇️ Download summary (opens in Excel)</button>
@@ -2226,9 +2242,9 @@ function printHTML(title, bodyHtml){
 }
 function commTag(c){ return isCommunity(c)?'<span class="blue flag">Community</span>':(childRoom(c)?esc(childRoom(c)):"CDC"); }
 function rosterTable(list, withStatus, day){
-  const head=`<tr><th>Child</th><th>Gr</th><th>Crew</th><th>CDC room / type</th><th>Allergy / Medical</th>${withStatus?"<th>In</th><th>Out</th>":""}</tr>`;
+  const head=`<tr><th>First</th><th>Last</th><th>Gr</th><th>Crew</th><th>CDC room / type</th><th>Allergy / Medical</th>${withStatus?"<th>In</th><th>Out</th>":""}</tr>`;
   const rows=list.map(c=>`<tr>
-    <td>${esc(fullName(c))}${childPhoto(c)===false?' <span class="red flag">NO PHOTO</span>':''}</td>
+    <td>${esc(c.first)}</td><td>${esc(c.last)}${childPhoto(c)===false?' <span class="red flag">NO PHOTO</span>':''}</td>
     <td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
     <td>${esc([c.allergies,c.medical].filter(Boolean).join("; "))}</td>
     ${withStatus?"<td style='width:60px'></td><td style='width:60px'></td>":""}</tr>`).join("");
@@ -2252,19 +2268,19 @@ function printDetail(){
   const rows=sortedChildren().map(c=>{
     const g=guardiansFor(c).map(x=>x.name+(x.phone?" "+x.phone:"")).join(" / ");
     const em=emergencyFor(c);
-    return `<tr><td>${esc(fullName(c))}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
+    return `<tr><td>${esc(c.first)}</td><td>${esc(c.last)}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
       <td>${esc([c.allergies,c.medical].filter(Boolean).join("; "))}</td>
       <td>${esc(g)}</td><td>${em?esc(em.name+(em.phone?" "+em.phone:"")):""}</td></tr>`;
   }).join("");
   printHTML("Full detail", `<div class="sub">Tech-outage backup — all contacts</div>
-    <table><thead><tr><th>Child</th><th>Gr</th><th>Crew</th><th>Type/Room</th><th>Allergy/Medical</th><th>Authorized pickup</th><th>Emergency</th></tr></thead><tbody>${rows}</tbody></table>`);
+    <table><thead><tr><th>First</th><th>Last</th><th>Gr</th><th>Crew</th><th>Type/Room</th><th>Allergy/Medical</th><th>Authorized pickup</th><th>Emergency</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 function printAllergiesList(){
   const list=sortedChildren().filter(hasAlert).filter(passFilters);
-  const rows=list.map(c=>`<tr><td>${esc(fullName(c))}</td><td>${esc(c.crew)}</td><td>${childRoom(c)?esc(childRoom(c)):(isCommunity(c)?"Community":"CDC")}</td>
+  const rows=list.map(c=>`<tr><td>${esc(c.first)}</td><td>${esc(c.last)}</td><td>${esc(c.crew)}</td><td>${childRoom(c)?esc(childRoom(c)):(isCommunity(c)?"Community":"CDC")}</td>
     <td class="red">${esc(c.allergies||"")}</td><td>${esc(c.medical||"")}</td></tr>`).join("");
   printHTML("Allergies", `<div class="sub">Allergy &amp; medical list${state.fCrew?" — "+esc(state.fCrew)+" crew":""}</div>
-    <table><thead><tr><th>Child</th><th>Crew</th><th>Room/Type</th><th>Allergies</th><th>Medical</th></tr></thead><tbody>${rows}</tbody></table>`);
+    <table><thead><tr><th>First</th><th>Last</th><th>Crew</th><th>Room/Type</th><th>Allergies</th><th>Medical</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 function printSnackSheet(){
   const day=state.day;
@@ -2517,6 +2533,7 @@ app.addEventListener("click",async e=>{
     case "volunteers": go("volunteers"); break;
     case "info": go("info"); break;
     case "flags": go("flags"); break;
+    case "setSort": state.reportSort=el.getAttribute("data-sort"); render(); break;
     case "chat": go("chat"); break;
     case "rolepick": go("rolepick"); break;
     case "previewpick": go("previewpick"); break;

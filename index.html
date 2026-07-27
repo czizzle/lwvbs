@@ -786,6 +786,14 @@ let db = demoDB;
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function fullName(c){return c.first+" "+c.last;}
 function initials(c){return (c.first[0]||"")+(c.last[0]||"");}
+// Todd's request: a child's initials always carry their crew colour, on every
+// screen and every grouping — not just when the list happens to be grouped by
+// crew. Inline style beats the group's --grp variable.
+function avatar(c, extra){
+  const col=CONFIG.crewColors[c.crew]||"";
+  const sty=col?`background:${col};color:${inkFor(col)}`:"";
+  return `<div class="avatar" style="${sty}${extra?";"+extra:""}">${esc(initials(c))}</div>`;
+}
 const GRADE_ORDER=["K4","K5","1","2","3","4","5"];
 const WEEK=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function gradeLabel(g){return g==="K4"?"PreK (K4)":g==="K5"?"Kindergarten (K5)":g==="K"?"Kindergarten":(!g?"Grade not set":"Grade "+g);}
@@ -1094,6 +1102,7 @@ function render(){
   if(v==="chat") return renderChat();
   if(v==="export") return can("export")?renderExport():renderNoAccess("Export");
   if(v==="import") return can("addChild")?renderImport():renderNoAccess("Import");
+  if(v==="assign") return can("editChild")?renderAssign():renderNoAccess("Assign crews & rooms");
   if(v==="activity") return renderActivity();
   if(v==="consent") return renderConsent();
   if(v==="volunteers") return can("volunteersView")?renderVolunteers():renderNoAccess("Volunteers");
@@ -1402,17 +1411,18 @@ function childRow(c,act){
   const st=statusOf(c,state.day).code;
   const stTag = st==="in"?`<span class="status in">Here</span>`:st==="out"?`<span class="status out">Out</span>`:`<span class="status notin">—</span>`;
   return `<div class="kid" data-act="${act||'child'}" data-id="${c.id}">
-    <div class="avatar">${esc(initials(c))}</div>
+    ${avatar(c)}
     <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}${flagBadge(c)}</div>
-      <div class="meta">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)} · ${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}</div></div>
+      <div class="meta">${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}</div></div>
     ${stTag}<span class="chev">›</span>
   </div>`;
 }
 
 function filterBar(opts){
   opts=opts||{};
-  // Crew/room filters removed (Todd's feedback) — grouping replaces them. Only the
-  // check-out "community only" toggle remains (VBS volunteers check out community kids).
+  // Crew/room filters removed (Todd's feedback) — grouping replaces them. The
+  // "community only" toggle now shows on check-in, check-out and the roster
+  // (Todd 2026-07-25: check-out had it, the other two needed it too).
   if(!opts.community) return "";
   return `<div class="filters"><label class="toggle"><input type="checkbox" data-toggle="fCommunity" ${state.fCommunity?"checked":""}>Community kids only</label></div>`;
 }
@@ -1427,13 +1437,13 @@ function renderCheckList(mode){
     const base = (mode==="in"? (s!=="in"&&s!=="out"&&registeredForDay(c,day)) : s==="in");
     return base && matches(c,q) && passFilters(c);
   });
-  if(mode==="out" && state.fCommunity) list=list.filter(isCommunity);
+  if(state.fCommunity) list=list.filter(isCommunity);
 
   const rowFn=c=>{
     return `<div class="kid" data-act="${mode==='in'?'doCheckin':'toCheckout'}" data-id="${c.id}">
-      <div class="avatar">${esc(initials(c))}</div>
+      ${avatar(c)}
       <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}${flagBadge(c)}</div>
-        <div class="meta">${esc(gradeLabel(c.grade))} · ${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}
+        <div class="meta">${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}
           ${c.allergies?`<span class="tag allergy">⚠ ${esc(c.allergies.split(" ")[0])}</span>`:""}</div></div>
       ${mode==='in'?'<span class="chev">＋</span>':'<span class="status in">Tap to check out</span>'}
     </div>`;
@@ -1448,7 +1458,7 @@ function renderCheckList(mode){
       ${helperBar()}
       ${dayCtl?`<div style="margin-bottom:12px">${dayCtl}</div>`:""}
       <input class="search" placeholder="Search a child's name or room…" value="${esc(q)}" data-search>
-      ${filterBar({community: mode==="out"})}
+      ${filterBar({community:true})}
       ${mode==='in'
         ? `<div class="banner" style="background:#e7f6ec;border-color:#c3e6cf;color:#0b5c2e">Tap a name to check the child IN. ${list.length} waiting. Dots: <span class="ndot red"></span> no photos · <span class="ndot yellow"></span> allergy · <span class="ndot blue"></span> community.</div>`
         : `<div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Tap a name to check the child OUT to a guardian. ${list.length} here now.</div>`}
@@ -1501,12 +1511,13 @@ function renderCheckoutConfirm(){
 }
 function renderRoster(){
   const q=state.search;
-  const list=sortedChildren().filter(c=>matches(c,q)&&passFilters(c));
+  let list=sortedChildren().filter(c=>matches(c,q)&&passFilters(c));
+  if(state.fCommunity) list=list.filter(isCommunity);
   const rowFn=c=>{
     const st=statusOf(c,state.day).code;
     const stTag = st==="in"?`<span class="status in">Here</span>`:st==="out"?`<span class="status out">Out</span>`:`<span class="status notin">—</span>`;
     return `<div class="kid" data-act="child" data-id="${c.id}">
-      <div class="avatar">${esc(initials(c))}</div>
+      ${avatar(c)}
       <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}${flagBadge(c)}</div>
         <div class="meta"><span class="tag grade">${esc(/^K/.test(c.grade)?c.grade:"Gr "+c.grade)}</span>${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}
           ${c.allergies?`<span class="tag allergy">⚠ allergy</span>`:""}${c.medical?`<span class="tag med">✚ medical</span>`:""}${isCommunity(c)?`<span class="tag" style="background:#e4eefb;color:#2f6fb0">🔵 community</span>`:""}</div></div>
@@ -1514,12 +1525,16 @@ function renderRoster(){
     </div>`;
   };
   const dflt=defaultChildGroup();
-  app.innerHTML = topbar("Roster", DATA.children.length+" registered", true, true) + `
+  const rosterSub = state.fCommunity
+    ? list.length+" community kids (of "+DATA.children.length+")"
+    : DATA.children.length+" registered";
+  app.innerHTML = topbar("Roster", rosterSub, true, true) + `
     <div class="content">
       <button class="btn ghost no-print" data-act="reports" style="margin:0 0 12px">🖨️ Print &amp; reports</button>
+      ${can("editChild")?`<button class="btn ghost no-print" data-act="assign" style="margin:0 0 12px">🎨 Assign crews &amp; rooms</button>`:""}
       ${can("addChild")?`<button class="btn ghost no-print" data-act="addChild" style="margin:0 0 12px">＋ Add a walk-up child</button>`:""}
       <input class="search" placeholder="Search name, crew, or room…" value="${esc(q)}" data-search>
-      ${filterBar({})}
+      ${filterBar({community:true})}
       ${groupControls("roster","child",dflt)}
       ${groupedList("roster", list, rowFn, "child", dflt)}
     </div>`;
@@ -1528,6 +1543,20 @@ function renderRoster(){
 
 function renderReports(){
   const dayBtns=CONFIG.dates.map(d=>`<button class="btn ghost" data-act="printDay" data-d="${d}" style="margin-top:8px">🖨️ ${dayName(d)} — crew roster</button>`).join("");
+  // One button per room / crew so a teacher or leader gets only their own sheet.
+  const rooms=[...new Set(DATA.children.map(childRoom).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  const roomBtns=rooms.map(r=>{
+    const n=DATA.children.filter(c=>childRoom(c)===r).length;
+    return `<button class="btn ghost" data-act="printRoomOne" data-room="${esc(r)}" style="margin-top:8px">🖨️ ${esc(r)} only (${n})</button>`;
+  }).join("");
+  const crewBtns=CONFIG.crews.map(cr=>{
+    const n=DATA.children.filter(c=>c.crew===cr).length;
+    if(!n) return "";
+    const col=CONFIG.crewColors[cr]||"#999";
+    return `<button class="btn ghost" data-act="printCrewOne" data-crew="${esc(cr)}" style="margin-top:8px">
+      <span class="dot" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${col};margin-right:6px"></span>🖨️ ${esc(cr)} crew only (${n})</button>`;
+  }).join("");
   app.innerHTML = topbar("Print & Reports","For CDC teachers, snack, and paper backup",true,false) + `
     <div class="content">
       <div class="banner">Every report shows the CDC room and the 🔵 community indicator. Good for handing the CDC teachers a paper copy, or a wifi-drop backup.</div>
@@ -1542,6 +1571,19 @@ function renderReports(){
         <button class="btn ghost" data-act="printAll">🖨️ Entire roster (A–Z)</button>
         <button class="btn ghost" data-act="printAllCrew">🖨️ Entire roster by crew</button>
         <button class="btn ghost" data-act="printDetail">🖨️ Full detail (parents, emergency, pickup) — tech-outage backup</button>
+        <button class="btn ghost" data-act="printDetailComm">🖨️ Full detail — community kids only</button>
+      </div>
+      <div class="panel">
+        <h3 style="font-size:16px">By CDC room</h3>
+        <div class="hint" style="margin-bottom:8px">All rooms together, or hand each CDC teacher just their own room.</div>
+        <button class="btn ghost" data-act="printByRoom">🖨️ All rooms (each starts a new page)</button>
+        ${roomBtns||`<div class="hint">No CDC room numbers assigned yet.</div>`}
+      </div>
+      <div class="panel">
+        <h3 style="font-size:16px">By crew</h3>
+        <div class="hint" style="margin-bottom:8px">All crews together, or one crew on its own sheet.</div>
+        <button class="btn ghost" data-act="printAllCrew">🖨️ All crews (entire event)</button>
+        ${crewBtns}
       </div>
       <div class="panel">
         <h3 style="font-size:16px">Print a specific day</h3>
@@ -1601,9 +1643,9 @@ function renderAllergies(){
   const rowFn=c=>{
     const st=statusOf(c,day).code;
     return `<div class="kid" data-act="child" data-id="${c.id}">
-      <div class="avatar" style="background:var(--red-bg);color:var(--red)">${esc(initials(c))}</div>
+      ${avatar(c,"box-shadow:0 0 0 2px var(--red)")}
       <div class="info"><div class="nm">${esc(fullName(c))} ${flagBadge(c)} ${st==="in"?'<span class="status in" style="font-size:11px">Here</span>':""}</div>
-        <div class="meta">${esc(c.crew)} · ${esc(gradeLabel(c.grade))}${childRoom(c)?" · "+esc(childRoom(c)):""}</div>
+        <div class="meta">${esc(c.crew)}${childRoom(c)?" · "+esc(childRoom(c)):""}</div>
         ${c.allergies?`<div class="v warn" style="font-size:15px;margin-top:4px">⚠️ ${esc(c.allergies)}</div>`:""}
         ${c.medical?`<div class="v med" style="font-size:15px;margin-top:2px">✚ ${esc(c.medical)}</div>`:""}
       </div></div>`;
@@ -1985,6 +2027,26 @@ function renderImport(){
       <div id="imp_out"></div>
     </div>`;
 }
+function renderAssign(){
+  const withCrew=DATA.children.filter(c=>c.crew).length;
+  const withRoom=DATA.children.filter(c=>childRoom(c)).length;
+  const cdc=DATA.children.filter(c=>c.attendsCDC).length;
+  app.innerHTML = topbar("Assign crews & rooms","Paste your list — no clicking child by child",true,false) + `
+    <div class="content form">
+      <div class="banner">The registration form doesn't ask for crew or CDC room, so paste your assignments here and they'll be applied across the roster by name. Three columns: <b>Name, Crew, Room</b>. A header row is optional. Leave the room blank for community kids, or leave the crew blank to set only rooms.</div>
+      <div class="panel">
+        <div class="field"><div class="k">Have a crew</div><div class="v">${withCrew} of ${DATA.children.length}</div></div>
+        <div class="field"><div class="k">Have a CDC room</div><div class="v">${withRoom} of ${cdc} CDC kids</div></div>
+      </div>
+      <label>Paste your assignments (tab or comma separated)</label>
+      <textarea id="asg_data" style="min-height:150px" placeholder="Name	Crew	Room
+Ella Roth	Pink
+Sam Roth	Yellow	Room 6"></textarea>
+      <button class="btn ghost" data-act="asgSample" style="margin-top:10px">Load a sample to see the format</button>
+      <button class="btn blue" data-act="asgPreview">Preview changes</button>
+      <div id="asg_out"></div>
+    </div>`;
+}
 function renderPreviewPick(){
   const vols=volsByFirst(DATA.volunteers);
   const rows=vols.map(v=>`<div class="rolerow ${state.previewAs&&state.previewAs.id===v.id?'sel':''}" data-act="setPreview" data-id="${v.id}">
@@ -2264,16 +2326,44 @@ function printByCrewFor(day, whole){
 function printAllAZ(){
   printHTML("Full roster", `<div class="sub">Entire event — alphabetical (${DATA.children.length})</div>`+rosterTable(sortedChildren(),false));
 }
-function printDetail(){
-  const rows=sortedChildren().map(c=>{
+function printDetailFor(list, subtitle){
+  const rows=list.map(c=>{
     const g=guardiansFor(c).map(x=>x.name+(x.phone?" "+x.phone:"")).join(" / ");
     const em=emergencyFor(c);
     return `<tr><td>${esc(c.first)}</td><td>${esc(c.last)}</td><td>${esc(c.grade)}</td><td>${esc(c.crew)}</td><td>${commTag(c)}</td>
       <td>${esc([c.allergies,c.medical].filter(Boolean).join("; "))}</td>
       <td>${esc(g)}</td><td>${em?esc(em.name+(em.phone?" "+em.phone:"")):""}</td></tr>`;
   }).join("");
-  printHTML("Full detail", `<div class="sub">Tech-outage backup — all contacts</div>
+  printHTML("Full detail", `<div class="sub">${esc(subtitle)}</div>
     <table><thead><tr><th>First</th><th>Last</th><th>Gr</th><th>Crew</th><th>Type/Room</th><th>Allergy/Medical</th><th>Authorized pickup</th><th>Emergency</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+function printDetail(){
+  printDetailFor(sortedChildren(), "Tech-outage backup — all contacts");
+}
+/* Todd 2026-07-25: reports that break out by CDC room and by crew, where each
+   room / crew can also be printed on its own without the others on the page.
+   `only` = a single room or crew name; omit it for the all-in-one version. */
+function printByRoom(only){
+  const base=sortedChildren().filter(c=>childRoom(c));
+  const rooms=[...new Set(base.map(childRoom))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+  const show=only?rooms.filter(r=>r===only):rooms;
+  if(!show.length){ toast(only?"No kids in "+only:"No CDC room numbers assigned yet"); return; }
+  let body=`<div class="sub">${only?esc(only):"All CDC rooms"} — CDC room roster</div>`;
+  show.forEach((rm,i)=>{
+    const g=base.filter(c=>childRoom(c)===rm);
+    body+=`<h3${i?' style="page-break-before:always"':""}>${esc(rm)} (${g.length})</h3>`+rosterTable(g,false);
+  });
+  printHTML(only||"By CDC room", body);
+}
+function printOneCrew(only){
+  const g=sortedChildren().filter(c=>c.crew===only);
+  if(!g.length){ toast("No kids in "+only+" crew"); return; }
+  printHTML(only+" crew", `<div class="sub">${esc(only)} crew — entire event (${g.length})</div>`+rosterTable(g,false));
+}
+function printDetailCommunity(){
+  const list=sortedChildren().filter(isCommunity);
+  if(!list.length){ toast("No community kids on the roster"); return; }
+  printDetailFor(list, "Community kids only — all contacts");
 }
 function printAllergiesList(){
   const list=sortedChildren().filter(hasAlert).filter(passFilters);
@@ -2342,6 +2432,73 @@ function exportFull(){
   });
   downloadFile("VBS-full-data-2026.csv", toCSV(rows));
   toast("⬇️ Full data downloaded");
+}
+
+/* ============================================================
+   ASSIGNMENTS (crew + CDC room, pasted in bulk)
+   The Google Form doesn't collect crew or CDC room — Todd assigns
+   those himself after registration closes. This takes his list and
+   applies it across the roster by name, so he never has to open
+   each child one at a time.
+   ============================================================ */
+function normName(s){ return String(s||"").toLowerCase().replace(/[^a-z]/g,""); }
+function parseAssignments(text){
+  const rows=splitRows(text);
+  if(!rows.length) return {matches:[],unmatched:[],ambiguous:[],noChange:0};
+  // A header row is optional. If the first row looks like headers, use it to
+  // find the columns; otherwise assume Name, Crew, Room in that order.
+  const first=rows[0].map(normHead);
+  const looksHeader=first.some(h=>/^(name|childname|first|firstname|last|lastname|crew|room|cdcroom|roomnumber)$/.test(h));
+  let iName=-1,iFirst=-1,iLast=-1,iCrew=-1,iRoom=-1,body=rows;
+  if(looksHeader){
+    body=rows.slice(1);
+    first.forEach((h,i)=>{
+      if(/^(name|childname|child|student)$/.test(h)&&iName<0) iName=i;
+      else if(/^(first|firstname|childfirstname)$/.test(h)&&iFirst<0) iFirst=i;
+      else if(/^(last|lastname|childlastname)$/.test(h)&&iLast<0) iLast=i;
+      else if(/crew|group/.test(h)&&iCrew<0) iCrew=i;
+      else if(/room/.test(h)&&iRoom<0) iRoom=i;
+    });
+  }
+  if(iName<0&&iFirst<0){ iName=0; if(iCrew<0)iCrew=1; if(iRoom<0)iRoom=2; }
+
+  // Index the roster by normalized full name, and by first name for a fallback.
+  const byFull={}, byFirst={};
+  DATA.children.forEach(c=>{
+    (byFull[normName(c.first)+normName(c.last)]=byFull[normName(c.first)+normName(c.last)]||[]).push(c);
+    (byFirst[normName(c.first)]=byFirst[normName(c.first)]||[]).push(c);
+  });
+  const crewByNorm={}; CONFIG.crews.forEach(cr=>crewByNorm[normName(cr)]=cr);
+
+  const matches=[],unmatched=[],ambiguous=[]; let noChange=0;
+  body.forEach(r=>{
+    const cell=i=>(i>=0&&r[i]!=null)?String(r[i]).trim():"";
+    let nm=cell(iName);
+    if(!nm && (iFirst>=0||iLast>=0)) nm=[cell(iFirst),cell(iLast)].filter(Boolean).join(" ");
+    if(!nm) return;
+    const rawCrew=cell(iCrew), rawRoom=cell(iRoom);
+    if(!rawCrew && !rawRoom) return;
+    const crew=crewByNorm[normName(rawCrew)]||"";
+    // "Room 3", "3", "rm 3" all land on whatever Todd typed — we keep his text.
+    const room=rawRoom;
+
+    // Name may arrive as "Last, First" or "First Last".
+    const parts=nm.includes(",")?nm.split(",").reverse():nm.split(/\s+/);
+    const key=parts.map(normName).join("");
+    let hits=byFull[key]||[];
+    if(!hits.length && parts.length===1) hits=byFirst[normName(parts[0])]||[];
+    if(!hits.length){ unmatched.push({name:nm,crew:rawCrew,room:rawRoom,why:"no child by that name"}); return; }
+    if(hits.length>1){ ambiguous.push({name:nm,crew:rawCrew,room:rawRoom,n:hits.length}); return; }
+    const c=hits[0];
+    // Check the crew spelling BEFORE deciding nothing changed, or a typo'd crew
+    // on a child who has no crew yet would look like "already correct".
+    if(rawCrew && !crew){ unmatched.push({name:nm,crew:rawCrew,room:rawRoom,why:`"${rawCrew}" isn't one of the ${CONFIG.crews.length} crews`}); return; }
+    const newCrew=crew||c.crew, newRoom=room||c.cdcRoom||"";
+    if(newCrew===c.crew && newRoom===(c.cdcRoom||"")){ noChange++; return; }
+    matches.push({child:c,crew:newCrew,room:newRoom,
+      wasCrew:c.crew||"(none)",wasRoom:c.cdcRoom||"(none)"});
+  });
+  return {matches,unmatched,ambiguous,noChange};
 }
 
 /* ============================================================
@@ -2483,6 +2640,7 @@ app.addEventListener("change",e=>{
 });
 
 let lastImport=null;
+let lastAssign=null;
 function collectChildForm(){
   const gv=id=>{const el=document.getElementById(id);return el?el.value.trim():"";};
   const gc=id=>{const el=document.getElementById(id);return el?el.checked:false;};
@@ -2529,6 +2687,7 @@ app.addEventListener("click",async e=>{
     case "announcements": go("announcements"); break;
     case "export": go("export"); break;
     case "import": go("import"); break;
+    case "assign": go("assign"); break;
     case "activity": go("activity"); break;
     case "volunteers": go("volunteers"); break;
     case "info": go("info"); break;
@@ -2700,10 +2859,58 @@ app.addEventListener("click",async e=>{
     case "printAll": printAllAZ(); break;
     case "printAllCrew": printByCrewFor(state.day,true); break;
     case "printDetail": printDetail(); break;
+    case "printDetailComm": printDetailCommunity(); break;
+    case "printByRoom": printByRoom(); break;
+    case "printRoomOne": printByRoom(el.getAttribute("data-room")); break;
+    case "printCrewOne": printOneCrew(el.getAttribute("data-crew")); break;
     case "printDay": state.day=el.getAttribute("data-d"); printByCrewFor(state.day,false); break;
     case "printAllergies": printAllergiesList(); break;
     case "printSnack": printSnackSheet(); break;
 
+    case "asgSample": {
+      const el3=document.getElementById("asg_data");
+      if(el3) el3.value="Name\tCrew\tRoom\n"+
+        DATA.children.slice(0,4).map((c,i)=>
+          `${c.first} ${c.last}\t${CONFIG.crews[i%CONFIG.crews.length]}\t${c.attendsCDC?"Room "+(3+(i%4)):""}`
+        ).join("\n");
+      break;
+    }
+    case "asgPreview": {
+      const text=(document.getElementById("asg_data")||{}).value||"";
+      lastAssign=parseAssignments(text);
+      const out=document.getElementById("asg_out");
+      const {matches,unmatched,ambiguous,noChange}=lastAssign;
+      if(!matches.length&&!unmatched.length&&!ambiguous.length){
+        out.innerHTML=`<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">No rows found. Each line needs a name plus a crew and/or a room.</div>`; break; }
+      const sample=matches.slice(0,10).map(m=>{
+        const col=CONFIG.crewColors[m.crew]||"#999";
+        const crewBit=m.crew!==m.wasCrew?`<span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${col};margin-right:5px"></span>${esc(m.wasCrew)} → <b>${esc(m.crew)}</b>`:esc(m.crew||"(no crew)");
+        const roomBit=m.room!==m.wasRoom?` · room ${esc(m.wasRoom)} → <b>${esc(m.room||"(none)")}</b>`:(m.room?" · "+esc(m.room):"");
+        return `<div class="field"><div class="k">${esc(fullName(m.child))}</div><div class="v">${crewBit}${roomBit}</div></div>`;
+      }).join("");
+      out.innerHTML=`<div class="panel" style="margin-top:14px">
+        <h3 style="font-size:16px">${matches.length} child${matches.length===1?"":"ren"} will change</h3>
+        ${noChange?`<div class="mini" style="margin-bottom:8px">${noChange} already matched what you pasted — no change needed.</div>`:""}
+        ${sample}${matches.length>10?`<div class="mini" style="margin-top:8px">…and ${matches.length-10} more</div>`:""}
+        ${ambiguous.length?`<div class="banner" style="margin-top:10px;background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">⚠️ ${ambiguous.length} name${ambiguous.length===1?" matches":"s match"} more than one child — skipped. Use the full first and last name: ${esc(ambiguous.slice(0,5).map(a=>a.name).join(", "))}</div>`:""}
+        ${unmatched.length?`<div class="banner" style="margin-top:10px;background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">⚠️ ${unmatched.length} row${unmatched.length===1?"":"s"} skipped:<br>${unmatched.slice(0,6).map(u=>esc(u.name)+" — "+esc(u.why)).join("<br>")}${unmatched.length>6?"<br>…and "+(unmatched.length-6)+" more":""}</div>`:""}
+        ${matches.length?`<button class="btn blue" data-act="asgConfirm">✅ Apply to ${matches.length} child${matches.length===1?"":"ren"}</button>`:""}
+      </div>`;
+      break;
+    }
+    case "asgConfirm": {
+      if(!lastAssign||!lastAssign.matches.length){ toast("Nothing to apply"); break; }
+      for(const m of lastAssign.matches){
+        m.child.crew=m.crew;
+        m.child.cdcRoom=m.room;
+        await db.saveChild(m.child);
+      }
+      const n=lastAssign.matches.length;
+      await db.logActivity({at:nowISO(),user:actor(),action:"Assigned crew/room for "+n+" children"});
+      lastAssign=null;
+      go("roster"); toast("Updated "+n+" child"+(n===1?"":"ren"));
+      break;
+    }
     case "impSample": {
       const el2=document.getElementById("imp_data");
       if(el2) el2.value="First Name\tLast Name\tGrade\tCrew\tAttends CDC\tCDC Room\tDays Attending\tAllergies\tMedical\tParent First\tParent Last\tParent Email\tParent Phone\tEmergency Contact Name\tEmergency Contact Phone\tPhoto Information\n"+

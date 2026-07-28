@@ -1,0 +1,34 @@
+name: Supabase keepalive
+
+# Supabase pauses free-tier projects after 7 days of low database activity.
+# This runs on GitHub's infrastructure (not Crystal's PC), so the project stays
+# awake even if the PC is off for a stretch. VBS runs Aug 3-6 2026.
+#
+# The key below is the PUBLISHABLE key already shipped in index.html. It is
+# public by design; RLS protects the data. Nothing secret lives in this file.
+
+on:
+  schedule:
+    - cron: '15 13 * * *'   # 13:15 UTC daily = 8:15am Central (CDT)
+  workflow_dispatch:         # lets you run it on demand from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query the children table
+        run: |
+          KEY="sb_publishable_VdzVVoAC1I7bI0Hl2Ku-Ww_TckFaaki"
+          URL="https://uvmptaurflsohnhnazuv.supabase.co/rest/v1/children?select=id&limit=1"
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" "$URL")
+
+          echo "Supabase responded HTTP $CODE"
+
+          # 2xx = read succeeded. 401/403/404 still reached PostgREST, which is
+          # what registers database activity, so those count as a live project.
+          case "$CODE" in
+            2*|401|403|404) echo "Project is awake."; exit 0 ;;
+            *) echo "Unexpected response - project may be paused."; exit 1 ;;
+          esac

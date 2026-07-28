@@ -402,6 +402,9 @@ const CONFIG = {
 // volunteers. Demo mode only ever uses local sample data; it never touches Supabase.
 const FORCE_DEMO = /[?&]demo=1(&|$)/i.test(location.search);
 const LIVE = !FORCE_DEMO && !!(CONFIG.supabaseUrl && CONFIG.supabaseAnonKey);
+// Set when LIVE was intended but the database could not be reached, so the app
+// can say so loudly instead of quietly showing sample children.
+let liveConnectFailed = false;
 const CONSENT_TEXT = "I give permission for my child to attend Living Word Lutheran VBS (August 3–6, 2026). In an emergency, I authorize VBS staff to seek medical care if I cannot be reached. I have listed all known allergies and medical needs, and photo/media permission is recorded on my child's form. (Sample wording — the church replaces this with its official consent and release language.)";
 
 function buildRealSchedule(groups, stations){
@@ -1367,6 +1370,9 @@ function renderHome(){
 
   app.innerHTML = topbar(CONFIG.eventName, CONFIG.tagline, false, true, navHtml) + `
     <div class="content">
+      ${liveConnectFailed
+        ? `<div class="banner" style="background:#fdeaea;border-color:#f3c9c9;color:#8a1c1c"><b>⚠️ NOT CONNECTED — these are sample children, not your real roster.</b><br>The app could not reach the database, so nothing you do here is being saved. Do not check anyone in on this device. Tell Todd, then reload once you have a signal.</div>`
+        : ""}
       ${LIVE?"":(state.realLoaded
         ? `<div class="banner" style="background:#fdeaea;border-color:#f3c9c9;color:#8a1c1c">🔒 REAL roster loaded on THIS device only (local, not synced across phones). Treat this like real family data. ${roleChip}</div>`
         : `<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved. ${roleChip}</div>`)}
@@ -3030,7 +3036,13 @@ function prevView(){
       }
       if(!(data&&data.session)){ renderLogin(); return; }
       authed=true; state.currentUser=sessionUserKey(data.session.user);
-    }catch(err){ console.warn("Supabase init failed, demo fallback",err); db=demoDB; }
+    }catch(err){
+      // Falling back to sample kids without saying so is how a paused Supabase
+      // project went unnoticed for weeks (2026-07-27). Never fail quietly here:
+      // on event day a volunteer must be told the roster isn't the real one.
+      console.warn("Supabase init failed, demo fallback",err);
+      db=demoDB; liveConnectFailed=true;
+    }
   }
   await db.loadAll();
   render();

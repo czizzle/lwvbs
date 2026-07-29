@@ -357,6 +357,11 @@
    ============================================================ */
 
 const CONFIG = {
+  // Todd's ask (2026-07-28): a shared check-in tablet shouldn't stay signed in
+  // all day. Five hours covers a 7:30am sign-in through 12:30pm, well past the
+  // 11:30 finish. The warning fires first so nobody is dropped mid-checkout.
+  sessionHours: 5,
+  sessionWarnMinutes: 20,
   eventName: "Rainforest Falls VBS",
   location:  "Living Word Lutheran · Jackson, WI",
   tagline:   "Exploring the Nature of God",
@@ -453,6 +458,8 @@ const CAPS = {
   director:  ["*"],
   asst:      ["*"],
   pastor:    ["*"],
+  // deleteChild / clearRoster are deliberately absent from every listed role —
+  // only the "*" roles (director, assistant, pastor) can remove a child.
   checkin:   ["checkin","checkout","undoCheckin","addPickup","addChild","editChild"].concat(VIEW_BASE),
   snack:     ["snackEdit"].concat(VIEW_BASE),
   cdc:       ["checkin","checkout","undoCheckin","addPickup","editAllergies","editChild"].concat(VIEW_BASE),
@@ -500,7 +507,7 @@ let state = {
   pickReturn:"home", statKind:null,
   fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false,
   groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:"", previewAs:null,
-  loginMode:"email", otpSent:""
+  loginMode:"email", otpSent:"", impMode:"sync", impDrop:{}
 };
 let authed = false;
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
@@ -711,6 +718,19 @@ const demoDB = {
     const s=demoStore(); rows.forEach(c=>{ c.id=c.id||uid(); s.children.push(c); });
     detectFlags(s.children);
     demoSave(s); DATA.children=s.children;
+  },
+  async deleteChildren(ids){
+    const s=demoStore(); const kill=new Set(ids);
+    s.children=s.children.filter(c=>!kill.has(c.id));
+    Object.keys(s.attendance||{}).forEach(d=>{ kill.forEach(id=>{ delete s.attendance[d][id]; }); });
+    detectFlags(s.children);
+    demoSave(s); DATA.children=s.children; DATA.attendance=s.attendance;
+  },
+  async saveChildren(rows){
+    const s=demoStore(); const byId={}; rows.forEach(c=>{ byId[c.id]=c; });
+    s.children=s.children.map(c=>byId[c.id]||c);
+    detectFlags(s.children);
+    demoSave(s); DATA.children=s.children;
   }
 };
 
@@ -776,7 +796,21 @@ const liveDB = {
   async saveAnnouncement(a){ await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}); await this.loadAll(); },
   async deleteAnnouncement(id){ await SB.from("announcements").delete().eq("id",id); await this.loadAll(); },
   async saveScheduleLoc(map){ await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}); DATA.scheduleLoc=map; },
-  async importChildren(rows){ await SB.from("children").insert(rows.map(mapChildToDb)); await this.loadAll(); }
+  async importChildren(rows){ await SB.from("children").insert(rows.map(mapChildToDb)); await this.loadAll(); },
+  // Used by the merge import and the roster "danger zone". Attendance rows carry
+  // `on delete cascade`, so a child's check-ins go with them.
+  async deleteChildren(ids){
+    for(let i=0;i<ids.length;i+=100){ await SB.from("children").delete().in("id",ids.slice(i,i+100)); }
+    await this.loadAll();
+  },
+  // Bulk save for the merge import. saveChild() reloads every table on each
+  // call, which is fine for one edit and hopeless for a hundred — this batches
+  // the upserts and reloads once at the end.
+  async saveChildren(rows){
+    const mapped=rows.map(mapChildToDb);
+    for(let i=0;i<mapped.length;i+=100){ await SB.from("children").upsert(mapped.slice(i,i+100)); }
+    await this.loadAll();
+  }
 };
 function mapChildFromDb(r){return {id:r.id,familyId:r.family_id,first:r.first_name,last:r.last_name,grade:r.grade,gradeRaw:r.grade||"",gender:r.gender||"",dob:r.dob||"",crew:r.crew,attendsCDC:!!r.attends_cdc,cdcRoom:r.cdc_room||"",community:r.community||false,days:r.days||[],allergies:r.allergies||"",medical:r.medical_notes||"",comments:r.comments||"",parent:r.parent||null,extraPickups:r.extra_pickups||[],consent:r.consent||null,flags:r.flags||[]};}
 function mapChildToDb(c){return {id:c.id,family_id:c.familyId||null,first_name:c.first,last_name:c.last,grade:c.grade,gender:c.gender||null,dob:c.dob||null,crew:c.crew,attends_cdc:!!c.attendsCDC,cdc_room:c.cdcRoom||null,community:isCommunity(c),days:c.days||[],allergies:c.allergies,medical_notes:c.medical,comments:c.comments||"",parent:c.parent||null,extra_pickups:c.extraPickups||[],consent:c.consent||null,flags:c.flags||[]};}
@@ -788,7 +822,15 @@ let db = demoDB;
    ============================================================ */
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function fullName(c){return c.first+" "+c.last;}
-function initials(c){return (c.first[0]||"")+(c.last[0]||"");}
+// Two initials occasionally spell something a room full of kids will spot before
+// any adult does — Todd hit one on the roster (2026-07-28). For those few, use
+// the first two letters of the child's first name instead.
+const AWKWARD_INITIALS=["VD","BJ","BM","BS","WC","PP","FU"];
+function initials(c){
+  const a=((c.first||"")[0]||""), b=((c.last||"")[0]||"");
+  if(AWKWARD_INITIALS.includes((a+b).toUpperCase())&&(c.first||"").length>1) return (a+c.first[1]).toUpperCase();
+  return a+b;
+}
 // Todd's request: a child's initials always carry their crew colour, on every
 // screen and every grouping — not just when the list happens to be grouped by
 // crew. Inline style beats the group's --grp variable.
@@ -808,6 +850,11 @@ function weekdayCode(iso){return WEEK[new Date(iso+"T12:00:00").getDay()];}
 function ageFrom(dob){ if(!dob)return""; const b=new Date(dob+"T12:00:00"); if(isNaN(b))return""; const n=new Date(); let a=n.getFullYear()-b.getFullYear(); const m=n.getMonth()-b.getMonth(); if(m<0||(m===0&&n.getDate()<b.getDate()))a--; return a>=0&&a<25?a+" yrs":""; }
 
 function isCommunity(c){ if(typeof c.attendsCDC==="boolean") return !c.attendsCDC; return !!c.community; }
+// Event days on which this child has been checked in or out — used to warn
+// before a removal takes their attendance history with it.
+function childAttendanceDays(c){
+  return CONFIG.dates.filter(d=>{ const r=(DATA.attendance[d]||{})[c.id]; return r&&(r.inAt||r.outAt); });
+}
 function childPhoto(c){ if(c.parent && typeof c.parent.photoConsent==="boolean") return c.parent.photoConsent; return c.photoConsent!==false; }
 function childRoom(c){ return c.cdcRoom||""; }
 function registeredForDay(c,day){ if(!c.days||!c.days.length) return true; return c.days.includes(weekdayCode(day)); }
@@ -1105,6 +1152,7 @@ function render(){
   if(v==="chat") return renderChat();
   if(v==="export") return can("export")?renderExport():renderNoAccess("Export");
   if(v==="import") return can("addChild")?renderImport():renderNoAccess("Import");
+  if(v==="danger") return can("deleteChild")?renderDanger():renderNoAccess("Start the roster over");
   if(v==="assign") return can("editChild")?renderAssign():renderNoAccess("Assign crews & rooms");
   if(v==="activity") return renderActivity();
   if(v==="consent") return renderConsent();
@@ -1722,6 +1770,15 @@ function renderEditChild(){
 
       <button class="btn blue" data-act="saveChild" style="margin-top:18px">Save child</button>
       <button class="btn ghost" data-act="back">Cancel</button>
+      ${(c.id&&can("deleteChild"))?`<div class="panel" style="margin-top:24px;border-color:#f3c9c9">
+        <h3 style="font-size:16px;color:var(--red)">Remove ${esc(fullName(c))}</h3>
+        <p class="mini">Takes this child off the roster for good, along with any check-ins recorded for them. Registered by mistake, or a duplicate record — otherwise leave them here.</p>
+        ${state.confirmDel===c.id
+          ? `<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">Remove ${esc(fullName(c))} for good?${childAttendanceDays(c).length?` They have check-ins on ${childAttendanceDays(c).length} day${childAttendanceDays(c).length===1?"":"s"} — those go too.`:""}</div>
+             <button class="btn red no-print" data-act="delChildYes" data-id="${esc(c.id)}">Yes, remove ${esc(fullName(c))}</button>
+             <button class="btn ghost no-print" data-act="delChildNo">Keep them</button>`
+          : `<button class="btn red no-print" data-act="delChild" data-id="${esc(c.id)}">🗑 Remove this child</button>`}
+      </div>`:""}
     </div>`;
 }
 
@@ -2028,6 +2085,17 @@ function renderImport(){
       <div class="banner">Paste rows straight from the Google Form responses sheet (copy the cells, including the header row, and paste below). Chief reads the real layout — one row per family with up to four children — splits siblings under one parent, sorts out the Days-Attending checkboxes, and flags anything that needs a look (duplicates, kids under 4, missing grade or phone).</div>
       <label>Paste spreadsheet rows (tab or comma separated)</label>
       <textarea id="imp_data" style="min-height:150px" placeholder="First Name	Last Name	Grade	Crew	Allergies	Parent Email …"></textarea>
+      <label style="margin-top:14px">What should this do to the roster?</label>
+      <div class="panel" style="padding:4px 14px">
+        <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;font-weight:400;text-transform:none;font-size:16px;color:var(--ink);letter-spacing:0">
+          <input type="radio" name="imp_mode" value="sync" ${state.impMode!=="add"?"checked":""} style="margin-top:3px">
+          <span><b>Make the roster match this sheet</b><br><span class="mini">Updates the children already here, adds anyone new, and shows you anyone on the roster who isn't in the sheet so you can drop them. Crew and CDC room assignments are kept — the form doesn't collect those.</span></span>
+        </label>
+        <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);font-weight:400;text-transform:none;font-size:16px;color:var(--ink);letter-spacing:0">
+          <input type="radio" name="imp_mode" value="add" ${state.impMode==="add"?"checked":""} style="margin-top:3px">
+          <span><b>Add these as brand-new children</b><br><span class="mini">For a handful of late registrations. Nothing already on the roster is touched or removed.</span></span>
+        </label>
+      </div>
       <button class="btn ghost" data-act="impSample" style="margin-top:10px">Load a sample to see the format</button>
       <button class="btn blue" data-act="impPreview">Preview import</button>
       <div id="imp_out"></div>
@@ -2228,12 +2296,51 @@ async function verifyPhoneCode(){
     authed=true;
     state.currentUser=sessionUserKey(data&&data.user)||state.otpSent;
     state.otpSent=""; state.magicSent="";
+    stampSession(true); startSessionClock();
     await db.loadAll(); go("home");
   }catch(err){ renderLogin("Couldn't verify the code. Try again."); }
 }
-async function doLogout(){
+async function doLogout(msg){
   try{ await SB.auth.signOut(); }catch(e){}
-  authed=false; state.currentUser=null; state.magicSent=""; state.otpSent=""; state.loginMode="email"; renderLogin();
+  stopSessionClock();
+  authed=false; state.currentUser=null; state.magicSent=""; state.otpSent=""; state.loginMode="email"; renderLogin(msg);
+}
+
+/* ---- Session time limit -------------------------------------------------
+   A Supabase session survives a closed tab, so without this the check-in
+   tablet stays signed in indefinitely. Todd asked for a five-hour cap.
+   The countdown warns first and offers to extend, because being logged out
+   with a line of parents waiting is worse than staying signed in.
+   ------------------------------------------------------------------------ */
+const SESSION_KEY="vbs_session_start";
+let sessionTimer=null;
+function sessionStart(){ const v=parseInt(localStorage.getItem(SESSION_KEY)||"",10); return isNaN(v)?null:v; }
+function stampSession(force){ if(force||!sessionStart()) localStorage.setItem(SESSION_KEY,String(Date.now())); }
+function stopSessionClock(){ if(sessionTimer){ clearInterval(sessionTimer); sessionTimer=null; } localStorage.removeItem(SESSION_KEY); sessionBanner(0); }
+function sessionBanner(minsLeft){
+  let el=document.getElementById("sessionwarn");
+  if(!minsLeft){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement("div"); el.id="sessionwarn";
+    el.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:70;background:#8a5a00;color:#fff;padding:12px 14px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;font-weight:600;box-shadow:0 -2px 12px rgba(0,0,0,.2)";
+    document.body.appendChild(el);
+  }
+  el.innerHTML=`<span>Signing out in ${minsLeft} minute${minsLeft===1?"":"s"}.</span>
+    <button class="btn" style="margin:0;padding:8px 16px;width:auto;background:#fff;color:#8a5a00">Stay signed in</button>`;
+  // The banner lives outside #app, so it needs its own handler.
+  el.querySelector("button").addEventListener("click",()=>{ stampSession(true); sessionBanner(0); toast("Staying signed in"); });
+}
+function startSessionClock(){
+  if(!LIVE) return;
+  stampSession(false);
+  if(sessionTimer) clearInterval(sessionTimer);
+  const tick=async()=>{
+    const st=sessionStart(); if(!st) return;
+    const mins=(CONFIG.sessionHours*60)-Math.floor((Date.now()-st)/60000);
+    if(mins<=0){ sessionBanner(0); await doLogout("Signed out after "+CONFIG.sessionHours+" hours. Sign in again to carry on."); return; }
+    sessionBanner(mins<=CONFIG.sessionWarnMinutes?mins:0);
+  };
+  sessionTimer=setInterval(tick,30000); tick();
 }
 
 function renderActivity(){
@@ -2264,7 +2371,8 @@ function renderInfo(){
         <p>See exactly what each volunteer will — director, check-in, snack team, CDC teacher, and so on. The menu and screens change to match.</p>
         <button class="btn ghost no-print" data-act="rolepick">${ROLE_EM(currentRoleKey())} Viewing as: ${esc(ROLE_LABEL(currentRoleKey()))} — switch</button>
       </div>`}
-      ${can("addChild")?`<div class="panel"><h3>Import the roster</h3><p>Bring in children and parents from the Google Form spreadsheet.</p><button class="btn ghost no-print" data-act="import">⬆️ Import from spreadsheet</button></div>`:""}
+      ${can("addChild")?`<div class="panel"><h3>Import the roster</h3><p>Bring in children and parents from the Google Form spreadsheet. Re-importing is safe: it updates the ${DATA.children.length} children already here, adds anyone new, and shows you any duplicates to drop before saving a thing. Crew and CDC room assignments are kept.</p><button class="btn ghost no-print" data-act="import">⬆️ Import from spreadsheet</button></div>`:""}
+      ${can("deleteChild")?`<div class="panel"><h3>Start the roster over</h3><p>Remove all ${DATA.children.length} children and import fresh. Only worth it if the roster is beyond fixing — the import above can usually sort it out without losing your crew and room work.</p><button class="btn ghost no-print" data-act="danger">🗑 Start the roster over</button></div>`:""}
       <div class="panel">
         <h3>Keeping kids safe</h3>
         <p>• Only release a child to a guardian shown on their record. If unsure, check ID and ask the check-in lead.</p>
@@ -2283,6 +2391,29 @@ function renderInfo(){
       ${LIVE?"":`<button class="btn red no-print" data-act="resetDemo">🔄 Reset demo data</button>`}
       ${LIVE?`<button class="btn ghost no-print" data-act="signout">Sign out</button>`:``}
       <div class="brandfoot"><img src="assets/church-logo.png" alt="${esc(CONFIG.church)}"><div class="tag">${esc(CONFIG.tagline)}</div></div>
+    </div>`;
+}
+
+function renderDanger(){
+  const n=DATA.children.length;
+  const withAtt=DATA.children.filter(c=>childAttendanceDays(c).length).length;
+  const withCrew=DATA.children.filter(c=>c.crew||childRoom(c)).length;
+  app.innerHTML = topbar("Start the roster over","Remove every child and re-import",true,false) + `
+    <div class="content form">
+      <div class="banner">Try <b>Import → Make the roster match this sheet</b> first. It reconciles a fresh export against what's already here — updating, adding, and showing you the duplicates to drop — and it keeps the crew and room assignments you've made. Clearing the roster throws those away.</div>
+      <div class="panel">
+        <div class="field"><div class="k">Children on the roster</div><div class="v">${n}</div></div>
+        <div class="field"><div class="k">With a crew or CDC room set</div><div class="v">${withCrew}</div></div>
+        <div class="field"><div class="k">With check-ins recorded</div><div class="v">${withAtt}</div></div>
+      </div>
+      <div class="panel" style="border-color:#f3c9c9">
+        <h3 style="font-size:16px;color:var(--red)">Remove all ${n} children</h3>
+        <p class="mini">Every child record goes, along with every check-in and check-out recorded against them. Volunteers, announcements, and the activity log are untouched. This can't be undone — re-import the spreadsheet afterwards.</p>
+        <label>Type <b>REMOVE ALL</b> to confirm</label>
+        <input id="dz_confirm" placeholder="REMOVE ALL" autocapitalize="characters">
+        <button class="btn red no-print" data-act="clearRoster" style="margin-top:12px">🗑 Remove all ${n} children</button>
+        <button class="btn ghost no-print" data-act="back">Cancel</button>
+      </div>
     </div>`;
 }
 
@@ -2624,6 +2755,111 @@ function parseImport(text){
   detectFlags(children);
   return {children,headers,unmapped};
 }
+
+/* ============================================================
+   MERGE IMPORT — reconcile a fresh export against what's already here
+   ------------------------------------------------------------
+   The first version of this screen ran a plain INSERT, so every re-import
+   appended a second copy of the whole roster (182 records for 111 kids,
+   2026-07-29). It went unnoticed because the seeded rows use ids like
+   "f001k1" while the parser mints "f1k1" from the row position — two id
+   namespaces that can never collide, so the database had no reason to
+   complain. Matching is now done on the child, not on the id.
+   ============================================================ */
+// Identity, strongest first. Date of birth settles the two-Ella-Roths case.
+function identKeys(c){
+  const n=baseName(c.first,c.last);
+  const d=(c.dob||"").slice(0,10);
+  return d?[n+"|"+d,n]:[n];
+}
+// A blank cell in the export means "this sheet has nothing to say about that",
+// NOT "delete what's there". Crew and CDC room are the clearest case — the form
+// never asks for them, Todd assigns them in the app — but the same holds for a
+// grade he typed in by hand or a column missing from that day's export.
+// Removing a CHILD is a separate, explicit decision made in the preview.
+const IMPORT_KEEPS=["crew","cdcRoom","medical","comments","extraPickups","consent",
+  "grade","gradeRaw","gender","dob"];
+// Allergies and days are deliberately NOT in that list: the sheet is the
+// authority there, and Todd clears stale allergies at the source (2026-07-28).
+function blankVal(v){ return v==null||v===""||(Array.isArray(v)&&!v.length); }
+function mergeParent(oldP,newP){
+  if(!newP) return oldP||null;
+  if(!oldP) return newP;
+  const out=Object.assign({},oldP,{});
+  Object.keys(newP).forEach(k=>{
+    if(k==="emergency"||k==="altPickup"){
+      out[k]=Object.assign({},oldP[k]||{});
+      Object.keys(newP[k]||{}).forEach(j=>{ if(!blankVal(newP[k][j])) out[k][j]=newP[k][j]; });
+    } else if(k==="photoConsent"){ out[k]=newP[k]; }
+    else if(!blankVal(newP[k])) out[k]=newP[k];
+  });
+  return out;
+}
+function mergeChild(existing,incoming){
+  const out=JSON.parse(JSON.stringify(incoming));
+  out.id=existing.id;                        // attendance rows point at this
+  out.familyId=existing.familyId||incoming.familyId;
+  IMPORT_KEEPS.forEach(f=>{ if(blankVal(incoming[f])) out[f]=existing[f]; });
+  out.parent=mergeParent(existing.parent,incoming.parent);
+  out.flags=existing.flags||[];              // detectFlags re-runs and keeps acks
+  return out;
+}
+// Fields worth showing Todd in the preview. Crew/room are deliberately absent:
+// they are preserved, never changed by an import.
+const DIFF_FIELDS=[["first","First name"],["last","Last name"],["grade","Grade"],
+  ["gender","Gender"],["dob","Date of birth"],["allergies","Allergies"],["attendsCDC","CDC"]];
+function diffChild(existing,merged){
+  const changes=[];
+  DIFF_FIELDS.forEach(([f,label])=>{
+    let a=existing[f],b=merged[f];
+    if(f==="attendsCDC"){ a=a?"CDC":"Community"; b=b?"CDC":"Community"; }
+    a=(a==null?"":String(a)); b=(b==null?"":String(b));
+    if(a!==b) changes.push({label,from:a,to:b});
+  });
+  const da=(existing.days||[]).join(","), dbv=(merged.days||[]).join(",");
+  if(da!==dbv) changes.push({label:"Days",from:da,to:dbv});
+  const pa=JSON.stringify(existing.parent||{}), pb=JSON.stringify(merged.parent||{});
+  if(pa!==pb) changes.push({label:"Parent / contact details",from:"",to:""});
+  return changes;
+}
+// When one sheet row matches several existing records — which is exactly what a
+// double-import leaves behind — keep the record carrying real work (check-ins,
+// then a crew or room) and mark the rest as the copies to remove. Never guess
+// silently: the preview names every record on both sides of that decision.
+function richness(c){
+  let n=0;
+  CONFIG.dates.forEach(d=>{ const r=(DATA.attendance[d]||{})[c.id]; if(r&&(r.inAt||r.outAt)) n+=100; });
+  if(c.crew) n+=10;
+  if(c.cdcRoom) n+=10;
+  if((c.extraPickups||[]).length) n+=5;
+  if(c.medical||c.comments) n+=2;
+  return n;
+}
+function planImport(incoming,existing){
+  const byKey={};
+  existing.forEach(c=>{ identKeys(c).forEach(k=>{ (byKey[k]=byKey[k]||[]).push(c); }); });
+  const claimed=new Set();
+  const updates=[],unchanged=[],adds=[],dupes=[];
+  incoming.forEach(row=>{
+    let pool=null;
+    for(const k of identKeys(row)){
+      const hits=(byKey[k]||[]).filter(c=>!claimed.has(c.id));
+      if(hits.length){ pool=hits; break; }
+    }
+    if(!pool){ adds.push(row); return; }
+    const ranked=pool.slice().sort((a,b)=>richness(b)-richness(a));
+    const primary=ranked[0];
+    claimed.add(primary.id);
+    ranked.slice(1).forEach(extra=>{ claimed.add(extra.id); dupes.push({child:extra,keptInstead:primary}); });
+    const merged=mergeChild(primary,row);
+    const changes=diffChild(primary,merged);
+    if(changes.length) updates.push({child:merged,before:primary,changes});
+    else unchanged.push(primary);
+  });
+  // Everything left over: on the roster, absent from the sheet.
+  const notInSheet=existing.filter(c=>!claimed.has(c.id));
+  return {updates,unchanged,adds,dupes,notInSheet};
+}
 /* ============================================================
    EVENTS
    ============================================================ */
@@ -2641,6 +2877,17 @@ app.addEventListener("change",e=>{
   if(sel){ state.currentVolunteer=sel.value; localStorage.setItem("vbs_vol",sel.value); return; }
   if(t.hasAttribute("data-filter")){ state[t.getAttribute("data-filter")]=t.value; render(); return; }
   if(t.hasAttribute("data-toggle")){ state[t.getAttribute("data-toggle")]=t.checked; render(); return; }
+  // Import preview: re-rendering here would throw the whole preview away, so
+  // just record the choice and keep the running total honest.
+  if(t.hasAttribute("data-drop")){
+    state.impDrop[t.getAttribute("data-drop")]=t.checked;
+    const tot=document.getElementById("imp_total");
+    if(tot&&lastImport&&lastImport.plan){
+      const n=DATA.children.length+lastImport.plan.adds.length-Object.values(state.impDrop).filter(Boolean).length;
+      tot.textContent=n+" children";
+    }
+    return;
+  }
   if(t.hasAttribute("data-groupby")){ state.groupBy[t.getAttribute("data-groupby")]=t.value; render(); return; }
   if(t.hasAttribute("data-sortchild")){ state.sortBy._child=t.value; render(); return; }
 });
@@ -2906,11 +3153,11 @@ app.addEventListener("click",async e=>{
     }
     case "asgConfirm": {
       if(!lastAssign||!lastAssign.matches.length){ toast("Nothing to apply"); break; }
-      for(const m of lastAssign.matches){
-        m.child.crew=m.crew;
-        m.child.cdcRoom=m.room;
-        await db.saveChild(m.child);
-      }
+      // One bulk save, not one round-trip per child — Todd pastes the whole
+      // roster's crews and rooms in a single go.
+      await db.saveChildren(lastAssign.matches.map(m=>{
+        m.child.crew=m.crew; m.child.cdcRoom=m.room; return m.child;
+      }));
       const n=lastAssign.matches.length;
       await db.logActivity({at:nowISO(),user:actor(),action:"Assigned crew/room for "+n+" children"});
       lastAssign=null;
@@ -2926,25 +3173,93 @@ app.addEventListener("click",async e=>{
     }
     case "impPreview": {
       const text=(document.getElementById("imp_data")||{}).value||"";
+      const modeEl=document.querySelector("input[name='imp_mode']:checked");
+      state.impMode=modeEl?modeEl.value:"sync";
       lastImport=parseImport(text);
       const out=document.getElementById("imp_out");
       if(!lastImport.children.length){ out.innerHTML='<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">No child rows found. Include a header row and at least one child.</div>'; break; }
       const fams=new Set(lastImport.children.map(c=>c.familyId)).size;
       const flagged=lastImport.children.filter(c=>(c.flags||[]).length).length;
-      const sample=lastImport.children.slice(0,6).map(c=>`<div class="field"><div class="k">${esc(c.crew||"(no crew yet)")}${c.attendsCDC?" · CDC "+esc(c.cdcRoom||""):" · Community"}</div><div class="v">${esc(fullName(c))}${(c.flags||[]).length?" ⚠️":""} — ${esc(gradeLabel(c.grade||"?"))}${c.allergies?" · ⚠️ "+esc(c.allergies):""}${c.parent.email?" · "+esc(c.parent.email):""}</div></div>`).join("");
-      out.innerHTML=`<div class="panel" style="margin-top:14px"><h3 style="font-size:16px">Preview: ${lastImport.children.length} children in ${fams} famil${fams===1?"y":"ies"}</h3>
-        ${flagged?`<div class="banner" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">⚠️ ${flagged} need a look after import — they'll show in the Review report for Todd.</div>`:""}
-        ${sample}${lastImport.children.length>6?`<div class="mini" style="margin-top:8px">…and ${lastImport.children.length-6} more</div>`:""}
-        ${lastImport.unmapped.length?`<div class="banner" style="margin-top:10px;background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">Columns I didn't recognize (ignored): ${esc(lastImport.unmapped.join(", "))}</div>`:""}
-        <button class="btn blue" data-act="impConfirm">✅ Import these ${lastImport.children.length} children</button></div>`;
+      const badCols=lastImport.unmapped.length?`<div class="banner" style="margin-top:10px;background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">Columns I didn't recognize (ignored): ${esc(lastImport.unmapped.join(", "))}</div>`:"";
+
+      if(state.impMode==="add"){
+        const sample=lastImport.children.slice(0,6).map(c=>`<div class="field"><div class="k">${esc(c.crew||"(no crew yet)")}${c.attendsCDC?" · CDC "+esc(c.cdcRoom||""):" · Community"}</div><div class="v">${esc(fullName(c))}${(c.flags||[]).length?" ⚠️":""} — ${esc(gradeLabel(c.grade||"?"))}${c.allergies?" · ⚠️ "+esc(c.allergies):""}${c.parent.email?" · "+esc(c.parent.email):""}</div></div>`).join("");
+        const already=lastImport.children.filter(r=>{
+          const keys=identKeys(r);
+          return DATA.children.some(c=>identKeys(c).some(k=>keys.includes(k)));
+        });
+        out.innerHTML=`<div class="panel" style="margin-top:14px"><h3 style="font-size:16px">Preview: adding ${lastImport.children.length} children in ${fams} famil${fams===1?"y":"ies"}</h3>
+          ${already.length?`<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">⚠️ ${already.length} of these ${already.length===1?"is":"are"} already on the roster and would end up listed twice: ${esc(already.slice(0,6).map(fullName).join(", "))}${already.length>6?", …":""}.<br><br>Switch to <b>Make the roster match this sheet</b> to update them instead of duplicating them.</div>`:""}
+          ${flagged?`<div class="banner" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00">⚠️ ${flagged} need a look after import — they'll show in the Review report for Todd.</div>`:""}
+          ${sample}${lastImport.children.length>6?`<div class="mini" style="margin-top:8px">…and ${lastImport.children.length-6} more</div>`:""}
+          ${badCols}
+          <button class="btn ${already.length?"ghost":"blue"}" data-act="impConfirm">${already.length?"Add anyway":"✅"} — add these ${lastImport.children.length} children</button></div>`;
+        break;
+      }
+
+      const plan=planImport(lastImport.children,DATA.children);
+      lastImport.plan=plan;
+      state.impDrop={};
+      plan.dupes.forEach(d=>{ state.impDrop[d.child.id]=true; });   // duplicates: default to removing
+      plan.notInSheet.forEach(c=>{ state.impDrop[c.id]=false; });   // everyone else: default to keeping
+
+      const line=(c,extra)=>`<div class="field"><div class="k">${esc(gradeLabel(c.grade||"?"))}${c.crew?" · "+esc(c.crew):""}${childRoom(c)?" · "+esc(childRoom(c)):""}</div><div class="v">${esc(fullName(c))}${extra||""}</div></div>`;
+      const changeLine=u=>`<div class="field"><div class="k">${esc(u.changes.map(ch=>ch.label).join(", "))}</div><div class="v">${esc(fullName(u.child))}${u.changes.filter(ch=>ch.from||ch.to).slice(0,2).map(ch=>`<br><span class="mini">${esc(ch.label)}: ${esc(ch.from||"(blank)")} → ${esc(ch.to||"(blank)")}</span>`).join("")}</div></div>`;
+      const dropRow=(c,why)=>`<label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer;padding:11px 0;border-top:1px solid var(--line);text-transform:none;font-size:15px;color:var(--ink);letter-spacing:0;font-weight:400">
+        <input type="checkbox" data-drop="${esc(c.id)}" ${state.impDrop[c.id]?"checked":""} style="margin-top:3px;flex:none;width:18px;height:18px">
+        <span style="flex:1;min-width:0"><b>${esc(fullName(c))}</b>${c.crew||childRoom(c)?` <span class="mini">· ${esc([c.crew,childRoom(c)].filter(Boolean).join(" · "))}</span>`:""}<br><span class="mini">${esc(why)}</span></span></label>`;
+
+      const attendanceAtRisk=[...plan.dupes.map(d=>d.child),...plan.notInSheet].filter(c=>richness(c)>=100);
+
+      out.innerHTML=`<div class="panel" style="margin-top:14px">
+        <h3 style="font-size:16px">Preview — nothing is saved until you press Apply</h3>
+        <div class="field"><div class="k">Sheet</div><div class="v">${lastImport.children.length} children in ${fams} famil${fams===1?"y":"ies"}</div></div>
+        <div class="field"><div class="k">On the roster now</div><div class="v">${DATA.children.length} children</div></div>
+        <div class="field"><div class="k">After you apply</div><div class="v"><b id="imp_total">${DATA.children.length+plan.adds.length-Object.values(state.impDrop).filter(Boolean).length} children</b></div></div>
+        ${badCols}
+      </div>
+
+      ${plan.adds.length?`<div class="panel"><h3 style="font-size:16px">➕ New — ${plan.adds.length} to add</h3>${plan.adds.slice(0,15).map(c=>line(c,(c.flags||[]).length?" ⚠️":"")).join("")}${plan.adds.length>15?`<div class="mini" style="margin-top:8px">…and ${plan.adds.length-15} more</div>`:""}</div>`:""}
+
+      ${plan.updates.length?`<div class="panel"><h3 style="font-size:16px">✏️ Changed — ${plan.updates.length} to update</h3><p class="mini">Crew and CDC room stay exactly as you set them.</p>${plan.updates.slice(0,15).map(changeLine).join("")}${plan.updates.length>15?`<div class="mini" style="margin-top:8px">…and ${plan.updates.length-15} more</div>`:""}</div>`:""}
+
+      ${plan.dupes.length?`<div class="panel" style="border-color:#f0d9a8"><h3 style="font-size:16px">👯 Duplicates — ${plan.dupes.length} extra cop${plan.dupes.length===1?"y":"ies"}</h3>
+        <p class="mini">Each of these is a second record for a child who is already on the roster. The copy holding check-ins, crew or room is the one being kept. Ticked means remove.</p>
+        ${plan.dupes.map(d=>dropRow(d.child,"Duplicate of "+fullName(d.keptInstead)+(d.keptInstead.crew?" (crew "+d.keptInstead.crew+")":"")+" — that record is being kept")).join("")}</div>`:""}
+
+      ${plan.notInSheet.length?`<div class="panel"><h3 style="font-size:16px">❓ On the roster, not in the sheet — ${plan.notInSheet.length}</h3>
+        <p class="mini">Added by hand, or removed from the sheet. These are <b>kept</b> unless you tick them.</p>
+        ${plan.notInSheet.map(c=>dropRow(c,"No matching row in the sheet")).join("")}</div>`:""}
+
+      ${plan.unchanged.length?`<div class="panel"><h3 style="font-size:16px">✓ Already correct — ${plan.unchanged.length}</h3><p class="mini">Matched the sheet exactly. Nothing to do.</p></div>`:""}
+
+      ${attendanceAtRisk.length?`<div class="banner" style="background:var(--red-bg);border-color:#f3c9c9;color:var(--red)">⚠️ ${attendanceAtRisk.length} of the records above ${attendanceAtRisk.length===1?"has":"have"} check-ins recorded: ${esc(attendanceAtRisk.slice(0,5).map(fullName).join(", "))}${attendanceAtRisk.length>5?", …":""}. Removing a child removes their check-in history too.</div>`:""}
+
+      <button class="btn blue" data-act="impConfirm">✅ Apply</button>`;
       break;
     }
     case "impConfirm": {
       if(!lastImport||!lastImport.children.length){ toast("Nothing to import"); break; }
-      await db.importChildren(lastImport.children);
-      await db.logActivity({at:nowISO(),user:actor(),action:"Imported "+lastImport.children.length+" children from spreadsheet"});
-      const n=lastImport.children.length; lastImport=null;
-      go("roster"); toast("Imported "+n+" children");
+      if(state.impMode==="add"){
+        await db.importChildren(lastImport.children);
+        await db.logActivity({at:nowISO(),user:actor(),action:"Added "+lastImport.children.length+" children from spreadsheet"});
+        const n=lastImport.children.length; lastImport=null;
+        go("roster"); toast("Added "+n+" children");
+        break;
+      }
+      const plan=lastImport.plan; if(!plan){ toast("Preview it first"); break; }
+      const drop=Object.keys(state.impDrop).filter(k=>state.impDrop[k]);
+      if(plan.updates.length) await db.saveChildren(plan.updates.map(u=>u.child));
+      if(plan.adds.length) await db.importChildren(plan.adds);
+      if(drop.length) await db.deleteChildren(drop);
+      const parts=[];
+      if(plan.updates.length) parts.push(plan.updates.length+" updated");
+      if(plan.adds.length) parts.push(plan.adds.length+" added");
+      if(drop.length) parts.push(drop.length+" removed");
+      if(!parts.length) parts.push("no changes");
+      await db.logActivity({at:nowISO(),user:actor(),action:"Synced roster to spreadsheet — "+parts.join(", ")});
+      lastImport=null; state.impDrop={};
+      go("roster"); toast("Roster synced — "+parts.join(", "));
       break;
     }
 
@@ -2987,6 +3302,28 @@ app.addEventListener("click",async e=>{
     }
     case "printRoster": printToday(); break;
     case "resetDemo": localStorage.removeItem(DEMO_KEY); state.realLoaded=false; await db.loadAll(); go("home"); toast("Demo reset"); break;
+
+    case "delChild": state.confirmDel=id; render(); break;
+    case "delChildNo": state.confirmDel=null; render(); break;
+    case "delChildYes": {
+      const c=DATA.children.find(x=>x.id===id); if(!c){ state.confirmDel=null; render(); break; }
+      const nm=fullName(c);
+      await db.deleteChildren([c.id]);
+      await db.logActivity({at:nowISO(),user:actor(),action:"Removed "+nm+" from the roster"});
+      state.confirmDel=null; state.editChild=null; state.selChild=null;
+      go("roster"); toast(nm+" removed");
+      break;
+    }
+    case "danger": go("danger"); break;
+    case "clearRoster": {
+      const typed=((document.getElementById("dz_confirm")||{}).value||"").trim().toUpperCase();
+      if(typed!=="REMOVE ALL"){ toast('Type REMOVE ALL to confirm'); break; }
+      const n=DATA.children.length;
+      await db.deleteChildren(DATA.children.map(c=>c.id));
+      await db.logActivity({at:nowISO(),user:actor(),action:"Cleared the roster — removed all "+n+" children"});
+      go("import"); toast("Roster cleared — "+n+" removed");
+      break;
+    }
     case "magicLink": await sendMagicLink(); break;
     case "magicReset": state.magicSent=""; renderLogin(); break;
     case "loginMode": state.loginMode=el.getAttribute("data-m"); renderLogin(); break;
@@ -3004,6 +3341,7 @@ function prevView(){
   if(v==="consent") return "child";
   if(v==="activity") return "info";
   if(v==="import") return "info";
+  if(v==="danger") return "info";
   if(v==="reports") return "roster";
   if(v==="scheduleLoc") return "schedule";
   if(v==="statList") return "home";
@@ -3031,11 +3369,16 @@ function prevView(){
       SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; if(s&&s.user) state.currentUser=sessionUserKey(s.user); });
       const {data}=await SB.auth.getSession();
       // Clean the magic-link tokens out of the URL after they've been consumed.
-      if(location.hash.includes("access_token")||location.hash.includes("error=")){
+      const cameFromLink=location.hash.includes("access_token");
+      if(cameFromLink||location.hash.includes("error=")){
         history.replaceState(null,"",location.pathname+location.search);
       }
       if(!(data&&data.session)){ renderLogin(); return; }
       authed=true; state.currentUser=sessionUserKey(data.session.user);
+      // A magic link that just landed starts the clock fresh; an existing
+      // session keeps whatever stamp it already had.
+      if(cameFromLink) stampSession(true);
+      startSessionClock();
     }catch(err){
       // Falling back to sample kids without saying so is how a paused Supabase
       // project went unnoticed for weeks (2026-07-27). Never fail quietly here:

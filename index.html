@@ -822,15 +822,7 @@ let db = demoDB;
    ============================================================ */
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function fullName(c){return c.first+" "+c.last;}
-// Two initials occasionally spell something a room full of kids will spot before
-// any adult does — Todd hit one on the roster (2026-07-28). For those few, use
-// the first two letters of the child's first name instead.
-const AWKWARD_INITIALS=["VD","BJ","BM","BS","WC","PP","FU"];
-function initials(c){
-  const a=((c.first||"")[0]||""), b=((c.last||"")[0]||"");
-  if(AWKWARD_INITIALS.includes((a+b).toUpperCase())&&(c.first||"").length>1) return (a+c.first[1]).toUpperCase();
-  return a+b;
-}
+function initials(c){return ((c.first||"")[0]||"")+((c.last||"")[0]||"");}
 // Todd's request: a child's initials always carry their crew colour, on every
 // screen and every grouping — not just when the list happens to be grouped by
 // crew. Inline style beats the group's --grp variable.

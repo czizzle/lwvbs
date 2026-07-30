@@ -703,6 +703,10 @@ const demoDB = {
     else { v.id=v.id||uid(); s.volunteers.push(v); }
     demoSave(s); DATA.volunteers=s.volunteers;
   },
+  async deleteVolunteer(id){
+    const s=demoStore(); s.volunteers=s.volunteers.filter(v=>v.id!==id);
+    demoSave(s); DATA.volunteers=s.volunteers;
+  },
   async saveAnnouncement(a){
     const s=demoStore(); s.announcements=s.announcements||[]; s.announcements.unshift(a);
     demoSave(s); DATA.announcements=s.announcements;
@@ -815,6 +819,10 @@ const liveDB = {
     const row={id:v.id||uid(),name:v.name,role_key:v.roleKey,role:v.role||ROLE_LABEL(v.roleKey),
                email:v.email||"",phone:v.phone||"",days:v.days||[]};
     mustWrite(await SB.from("volunteers").upsert(row),"volunteer");
+    await this.loadAll();
+  },
+  async deleteVolunteer(id){
+    mustWrite(await SB.from("volunteers").delete().eq("id",id),"volunteer removal");
     await this.loadAll();
   },
   async saveAnnouncement(a){ mustWrite(await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}),"announcement"); await this.loadAll(); },
@@ -1188,6 +1196,10 @@ function render(){
   if(v==="activity") return renderActivity();
   if(v==="consent") return renderConsent();
   if(v==="volunteers") return can("volunteersView")?renderVolunteers():renderNoAccess("Volunteers");
+  // Same gate as the Add form on the volunteers screen — checked here too, so
+  // typing the view into the URL doesn't get round it.
+  if(v==="editVol") return (can("editVolunteer")||currentRoleKey()==="director"||currentRoleKey()==="asst")
+                            ?renderEditVolunteer():renderNoAccess("Edit volunteer");
   if(v==="flags") return isDirector()?renderFlags():renderNoAccess("Review");
   if(v==="rolepick") return renderRolePicker();
   if(v==="previewpick") return canPreview()?renderPreviewPick():renderNoAccess("Preview");
@@ -1818,10 +1830,15 @@ function renderVolunteers(){
   const dayFilter=state.fVolDay;
   const q=(state.search||"").toLowerCase();
   const list=DATA.volunteers.filter(v=>(!dayFilter||((v.days||[]).includes(dayFilter))) && (!q||(v.name||"").toLowerCase().includes(q)||ROLE_LABEL(v.roleKey).toLowerCase().includes(q)));
-  const rowFn=v=>`<div class="kid" style="cursor:default">
+  /* A login-eligible volunteer with no email can never sign in, and the mistake
+     is invisible until they're standing at the door on day one. Say it on the
+     row. (Same rule the provisioner uses.) */
+  const needsEmail=v=>!((v.email||"").trim()) && (["director","asst","pastor","checkin","cdc"].includes(v.roleKey)
+                        || /leader/i.test(v.role||""));
+  const rowFn=v=>`<div class="kid"${canEdit?` data-act="editVol" data-id="${esc(v.id)}"`:` style="cursor:default"`}>
     <div class="avatar">${esc((v.name[0]||"")+((v.name.split(" ")[1]||" ")[0]||""))}</div>
     <div class="info"><div class="nm">${esc(v.name)} <span class="pill">${esc(v.role||ROLE_LABEL(v.roleKey))}</span></div>
-      <div class="meta">🔑 ${esc(ACCESS_LABEL(v.roleKey))}${(v.days&&v.days.length)?" · "+esc(v.days.join(", ")):""}${v.phone?" · "+esc(v.phone):""}${v.email?" · "+esc(v.email):""}</div></div>
+      <div class="meta">🔑 ${esc(ACCESS_LABEL(v.roleKey))}${(v.days&&v.days.length)?" · "+esc(v.days.join(", ")):""}${v.phone?" · "+esc(v.phone):""}${v.email?" · "+esc(v.email):""}${needsEmail(v)?` · <b style="color:var(--red)">no email — can't sign in</b>`:""}</div></div>
   </div>`;
   const roleSelOpts=ROLE_DEFS.map(r=>`<option value="${r.key}">${r.label}</option>`).join("");
   const dayOpts=["Mon","Tue","Wed","Thu"].map(d=>`<option value="${d}" ${dayFilter===d?"selected":""}>${d}</option>`).join("");
@@ -1838,10 +1855,38 @@ function renderVolunteers(){
         <div class="two"><div><label>Email</label><input id="vemail" type="email"></div>
           <div><label>Phone</label><input id="vphone" inputmode="tel"></div></div>
         <button class="btn blue" data-act="saveVol" style="margin-top:14px">Add volunteer</button>
-        <p class="mini" style="margin-top:8px">Roles decide what each person sees when we go live. Their login is created in Supabase by the director.</p>
+        <p class="mini" style="margin-top:8px">Tap anyone above to change their details or remove them. Roles decide what each person sees when we go live. Adding someone here does <b>not</b> create their login — Crystal runs that separately, so tell her once the teachers are in.</p>
       </div>`:`<p class="mini">Only the director or assistant directors can add or change volunteers.</p>`}
     </div>`;
   focusSearch();
+}
+
+function renderEditVolunteer(){
+  const v=state.editVol;
+  if(!v){ go("volunteers"); return; }
+  const roleSelOpts=ROLE_DEFS.map(r=>`<option value="${r.key}" ${v.roleKey===r.key?"selected":""}>${r.label}</option>`).join("");
+  const dayBoxes=["Mon","Tue","Wed","Thu"].map(d=>
+    `<label class="chk" style="margin:0"><input type="checkbox" class="ev_day" value="${d}" ${(v.days||[]).includes(d)?"checked":""}> ${d}</label>`).join("");
+  app.innerHTML = topbar("Edit volunteer", esc(v.name), true, false) + `
+    <div class="content">
+      <div class="form panel">
+        <label>Name</label><input id="ev_name" value="${esc(v.name||"")}">
+        <label>Role</label><select id="ev_rolekey">${roleSelOpts}</select>
+        <div class="two"><div><label>Email</label><input id="ev_email" type="email" value="${esc(v.email||"")}"></div>
+          <div><label>Phone</label><input id="ev_phone" inputmode="tel" value="${esc(v.phone||"")}"></div></div>
+        <p class="mini">The email has to match the one they'll use to sign in. Changing it here does not move their login — tell Crystal so she can re-run the account setup.</p>
+        <label style="margin-top:10px">Days</label><div class="filters">${dayBoxes}</div>
+        <button class="btn blue" data-act="saveVolEdit" data-id="${esc(v.id)}" style="margin-top:14px">Save changes</button>
+        <button class="btn ghost" data-act="volunteers" style="margin-top:8px">Cancel</button>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        ${state.confirmDelVol===v.id
+          ? `<p class="mini">Remove <b>${esc(v.name)}</b> from the volunteer list? This doesn't delete their login if they already have one.</p>
+             <button class="btn red" data-act="delVolYes" data-id="${esc(v.id)}">Yes, remove ${esc(v.name)}</button>
+             <button class="btn ghost" data-act="delVolNo" style="margin-top:8px">Keep them</button>`
+          : `<button class="btn red" data-act="delVol" data-id="${esc(v.id)}">🗑 Remove this volunteer</button>`}
+      </div>
+    </div>`;
 }
 
 function renderMyDay(){
@@ -3128,6 +3173,42 @@ app.addEventListener("click",async e=>{
       await db.logActivity({at:nowISO(),user:actor(),action:"Added volunteer: "+name+" ("+ROLE_LABEL(roleKey)+")"});
       go("volunteers");
       toast("Added "+name+(vemail?"":" — no email, so they can't be given a login"));
+      break;
+    }
+    case "editVol":
+      go("editVol",{editVol:DATA.volunteers.find(v=>v.id===id),confirmDelVol:null});
+      break;
+    case "saveVolEdit": {
+      const cur=DATA.volunteers.find(v=>v.id===id);
+      if(!cur){ go("volunteers"); break; }
+      const name=(document.getElementById("ev_name")||{}).value.trim();
+      if(!name){ toast("Enter a name"); break; }
+      const roleKey=(document.getElementById("ev_rolekey")||{}).value||"volunteer";
+      const email=(document.getElementById("ev_email")||{}).value.trim();
+      const days=[...document.querySelectorAll(".ev_day:checked")].map(x=>x.value);
+      /* Keep the free-text label (e.g. "Snacks Leader", "CDC Administrator")
+         when the role hasn't changed — the seeded roster carries job titles the
+         nine role keys don't cover, and overwriting them loses real detail. */
+      const role=(roleKey===cur.roleKey && cur.role)?cur.role:ROLE_LABEL(roleKey);
+      await db.saveVolunteer({id:cur.id,name,roleKey,role,email,
+        phone:(document.getElementById("ev_phone")||{}).value.trim(),days});
+      const saved=DATA.volunteers.find(v=>v.id===cur.id);
+      if(!saved||saved.name!==name){ toast("⚠️ Changes to "+name+" were NOT saved. Please try again."); break; }
+      await db.logActivity({at:nowISO(),user:actor(),action:"Edited volunteer: "+name+" ("+role+")"});
+      go("volunteers"); toast("Saved "+name);
+      break;
+    }
+    case "delVol": state.confirmDelVol=id; render(); break;
+    case "delVolNo": state.confirmDelVol=null; render(); break;
+    case "delVolYes": {
+      const v=DATA.volunteers.find(x=>x.id===id);
+      if(!v){ state.confirmDelVol=null; go("volunteers"); break; }
+      const nm=v.name;
+      await db.deleteVolunteer(v.id);
+      if(DATA.volunteers.some(x=>x.id===id)){ toast("⚠️ "+nm+" was NOT removed. Please try again."); break; }
+      await db.logActivity({at:nowISO(),user:actor(),action:"Removed volunteer: "+nm});
+      state.confirmDelVol=null; state.editVol=null;
+      go("volunteers"); toast(nm+" removed");
       break;
     }
 

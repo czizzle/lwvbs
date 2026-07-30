@@ -812,6 +812,21 @@ const liveDB = {
     await this.loadAll();
   }
 };
+
+/* Anomaly flags are a stored column, and only the demo adapter ever recomputed
+   them. So in LIVE mode a merge carried the OLD flags forward: after the
+   2026-07-29 cleanup the review report still listed 14 "no phone on file"
+   children whose numbers had just arrived in Todd's cleaned sheet, and stale
+   "duplicate" flags on records whose duplicates had been deleted. Re-run the
+   detector over the whole roster after any bulk change and persist only what
+   actually moved. Acks are preserved by detectFlags itself. */
+async function refreshFlags(){
+  const before=DATA.children.map(c=>JSON.stringify(c.flags||[]));
+  detectFlags(DATA.children);
+  const changed=DATA.children.filter((c,i)=>JSON.stringify(c.flags||[])!==before[i]);
+  if(changed.length) await db.saveChildren(changed);
+  return changed.length;
+}
 function mapChildFromDb(r){return {id:r.id,familyId:r.family_id,first:r.first_name,last:r.last_name,grade:r.grade,gradeRaw:r.grade||"",gender:r.gender||"",dob:r.dob||"",crew:r.crew,attendsCDC:!!r.attends_cdc,cdcRoom:r.cdc_room||"",community:r.community||false,days:r.days||[],allergies:r.allergies||"",medical:r.medical_notes||"",comments:r.comments||"",parent:r.parent||null,extraPickups:r.extra_pickups||[],consent:r.consent||null,flags:r.flags||[]};}
 function mapChildToDb(c){return {id:c.id,family_id:c.familyId||null,first_name:c.first,last_name:c.last,grade:c.grade,gender:c.gender||null,dob:c.dob||null,crew:c.crew,attends_cdc:!!c.attendsCDC,cdc_room:c.cdcRoom||null,community:isCommunity(c),days:c.days||[],allergies:c.allergies,medical_notes:c.medical,comments:c.comments||"",parent:c.parent||null,extra_pickups:c.extraPickups||[],consent:c.consent||null,flags:c.flags||[]};}
 
@@ -3234,6 +3249,7 @@ app.addEventListener("click",async e=>{
       if(!lastImport||!lastImport.children.length){ toast("Nothing to import"); break; }
       if(state.impMode==="add"){
         await db.importChildren(lastImport.children);
+        await refreshFlags();
         await db.logActivity({at:nowISO(),user:actor(),action:"Added "+lastImport.children.length+" children from spreadsheet"});
         const n=lastImport.children.length; lastImport=null;
         go("roster"); toast("Added "+n+" children");
@@ -3244,6 +3260,7 @@ app.addEventListener("click",async e=>{
       if(plan.updates.length) await db.saveChildren(plan.updates.map(u=>u.child));
       if(plan.adds.length) await db.importChildren(plan.adds);
       if(drop.length) await db.deleteChildren(drop);
+      await refreshFlags();   // else the review report keeps flagging things this import just fixed
       const parts=[];
       if(plan.updates.length) parts.push(plan.updates.length+" updated");
       if(plan.adds.length) parts.push(plan.adds.length+" added");
@@ -3301,6 +3318,7 @@ app.addEventListener("click",async e=>{
       const c=DATA.children.find(x=>x.id===id); if(!c){ state.confirmDel=null; render(); break; }
       const nm=fullName(c);
       await db.deleteChildren([c.id]);
+      await refreshFlags();   // a removed child can clear a duplicate flag on whoever remains
       await db.logActivity({at:nowISO(),user:actor(),action:"Removed "+nm+" from the roster"});
       state.confirmDel=null; state.editChild=null; state.selChild=null;
       go("roster"); toast(nm+" removed");

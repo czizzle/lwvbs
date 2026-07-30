@@ -446,6 +446,11 @@ const ROLE_DEFS = [
   {key:"volunteer", label:"Volunteer",             em:"🙌", note:"Schedule, calendar, announcements"}
 ];
 const ROLE_LABEL = k => (ROLE_DEFS.find(r=>r.key===k)||{}).label || "Volunteer";
+/* Mirrors login_eligible() in private/provision_users.py — keep the two in step.
+   The `leader` test is load-bearing: eight people on the real roster sign in ONLY
+   because their job title says Leader, at the plain `volunteer` access level. */
+const LOGIN_ROLE_KEYS = ["director","asst","pastor","checkin","cdc"];
+const loginEligible = v => LOGIN_ROLE_KEYS.includes(v.roleKey) || /leader/i.test(v.role||"");
 const ROLE_EM = k => (ROLE_DEFS.find(r=>r.key===k)||{}).em || "🙌";
 
 // Capabilities per role. "*" = everything.
@@ -1833,8 +1838,7 @@ function renderVolunteers(){
   /* A login-eligible volunteer with no email can never sign in, and the mistake
      is invisible until they're standing at the door on day one. Say it on the
      row. (Same rule the provisioner uses.) */
-  const needsEmail=v=>!((v.email||"").trim()) && (["director","asst","pastor","checkin","cdc"].includes(v.roleKey)
-                        || /leader/i.test(v.role||""));
+  const needsEmail=v=>!((v.email||"").trim()) && loginEligible(v);
   const rowFn=v=>`<div class="kid"${canEdit?` data-act="editVol" data-id="${esc(v.id)}"`:` style="cursor:default"`}>
     <div class="avatar">${esc((v.name[0]||"")+((v.name.split(" ")[1]||" ")[0]||""))}</div>
     <div class="info"><div class="nm">${esc(v.name)} <span class="pill">${esc(v.role||ROLE_LABEL(v.roleKey))}</span></div>
@@ -1851,7 +1855,10 @@ function renderVolunteers(){
       ${canEdit?`<div class="form panel" style="margin-top:16px">
         <h3 style="font-size:16px">Add a volunteer</h3>
         <label>Name</label><input id="vname" placeholder="First Last">
-        <label>Role</label><select id="vrolekey">${roleSelOpts}</select>
+        <label>Job title — what we call them</label>
+        <input id="vrole" placeholder="e.g. Snacks Leader — blank uses the access level's name">
+        <label>Access level — what they can see in the app</label>
+        <select id="vrolekey">${roleSelOpts}</select>
         <div class="two"><div><label>Email</label><input id="vemail" type="email"></div>
           <div><label>Phone</label><input id="vphone" inputmode="tel"></div></div>
         <button class="btn blue" data-act="saveVol" style="margin-top:14px">Add volunteer</button>
@@ -1864,20 +1871,41 @@ function renderVolunteers(){
 function renderEditVolunteer(){
   const v=state.editVol;
   if(!v){ go("volunteers"); return; }
-  const roleSelOpts=ROLE_DEFS.map(r=>`<option value="${r.key}" ${v.roleKey===r.key?"selected":""}>${r.label}</option>`).join("");
+  /* While the login-loss warning is up, the form must keep showing what was
+     TYPED, not what's stored — otherwise the re-render quietly reverts the
+     inputs and "Save anyway" writes back the old values. */
+  const warning=(state.confirmVolTitle===v.id && state.pendingVol) ? state.pendingVol : null;
+  const f=warning||v;
+  const roleSelOpts=ROLE_DEFS.map(r=>`<option value="${r.key}" ${f.roleKey===r.key?"selected":""}>${r.label}</option>`).join("");
   const dayBoxes=["Mon","Tue","Wed","Thu"].map(d=>
-    `<label class="chk" style="margin:0"><input type="checkbox" class="ev_day" value="${d}" ${(v.days||[]).includes(d)?"checked":""}> ${d}</label>`).join("");
+    `<label class="chk" style="margin:0"><input type="checkbox" class="ev_day" value="${d}" ${(f.days||[]).includes(d)?"checked":""}> ${d}</label>`).join("");
   app.innerHTML = topbar("Edit volunteer", esc(v.name), true, false) + `
     <div class="content">
       <div class="form panel">
-        <label>Name</label><input id="ev_name" value="${esc(v.name||"")}">
-        <label>Role</label><select id="ev_rolekey">${roleSelOpts}</select>
-        <div class="two"><div><label>Email</label><input id="ev_email" type="email" value="${esc(v.email||"")}"></div>
-          <div><label>Phone</label><input id="ev_phone" inputmode="tel" value="${esc(v.phone||"")}"></div></div>
+        <label>Name</label><input id="ev_name" value="${esc(f.name||"")}">
+        <label>Job title — what we call them</label>
+        <input id="ev_role" value="${esc(f.role||ROLE_LABEL(f.roleKey))}" placeholder="e.g. Snacks Leader">
+        <p class="mini">Free text, and it shows on the volunteer list and the job grouping. Most of the team
+          has a title the access levels below don't cover (Games Leader, Tech Goddess, Craft Assistant).
+          Leave it blank to fall back to the access level's own name.</p>
+        <label style="margin-top:10px">Access level — what they can see in the app</label>
+        <select id="ev_rolekey">${roleSelOpts}</select>
+        <div class="two"><div><label>Email</label><input id="ev_email" type="email" value="${esc(f.email||"")}"></div>
+          <div><label>Phone</label><input id="ev_phone" inputmode="tel" value="${esc(f.phone||"")}"></div></div>
         <p class="mini">The email has to match the one they'll use to sign in. Changing it here does not move their login — tell Crystal so she can re-run the account setup.</p>
         <label style="margin-top:10px">Days</label><div class="filters">${dayBoxes}</div>
-        <button class="btn blue" data-act="saveVolEdit" data-id="${esc(v.id)}" style="margin-top:14px">Save changes</button>
-        <button class="btn ghost" data-act="volunteers" style="margin-top:8px">Cancel</button>
+        ${state.confirmVolTitle===v.id&&state.pendingVol?`
+          <div class="banner" style="background:var(--amber-bg);border-color:#f0d9a8;color:#8a5a00;margin-top:14px">
+            <b>${esc(v.name)} would lose their login.</b> They can sign in today only because their job title
+            says <b>${esc(v.role||"")}</b>. Saving it as <b>${esc(state.pendingVol.role)}</b> at the
+            <b>${esc(ROLE_LABEL(state.pendingVol.roleKey))}</b> access level means the account setup will skip
+            them. Set the access level to one that signs in, or keep "Leader" in the title, if that isn't what
+            you want.
+          </div>
+          <button class="btn red" data-act="saveVolEdit" data-id="${esc(v.id)}" style="margin-top:10px">Save anyway</button>
+          <button class="btn ghost" data-act="editVol" data-id="${esc(v.id)}" style="margin-top:8px">Go back and change it</button>`
+        :`<button class="btn blue" data-act="saveVolEdit" data-id="${esc(v.id)}" style="margin-top:14px">Save changes</button>
+          <button class="btn ghost" data-act="volunteers" style="margin-top:8px">Cancel</button>`}
       </div>
       <div class="panel" style="margin-top:16px">
         ${state.confirmDelVol===v.id
@@ -3162,7 +3190,8 @@ app.addEventListener("click",async e=>{
       if(!name){toast("Enter a name");break;}
       const roleKey=(document.getElementById("vrolekey")||{}).value||"volunteer";
       const vemail=(document.getElementById("vemail")||{}).value.trim();
-      await db.saveVolunteer({name,roleKey,role:ROLE_LABEL(roleKey),email:vemail,phone:(document.getElementById("vphone")||{}).value.trim(),days:["Mon","Tue","Wed","Thu"]});
+      const vrole=((document.getElementById("vrole")||{}).value||"").trim()||ROLE_LABEL(roleKey);
+      await db.saveVolunteer({name,roleKey,role:vrole,email:vemail,phone:(document.getElementById("vphone")||{}).value.trim(),days:["Mon","Tue","Wed","Thu"]});
       /* Don't claim it worked — check the reloaded roster. A toast that lies is
          worse than an error: Todd added the same teachers twice trying to make
          it stick. */
@@ -3172,11 +3201,12 @@ app.addEventListener("click",async e=>{
       }
       await db.logActivity({at:nowISO(),user:actor(),action:"Added volunteer: "+name+" ("+ROLE_LABEL(roleKey)+")"});
       go("volunteers");
-      toast("Added "+name+(vemail?"":" — no email, so they can't be given a login"));
+      toast("Added "+name+((!vemail&&loginEligible({roleKey,role:vrole}))?" — no email, so they can't be given a login":""));
       break;
     }
     case "editVol":
-      go("editVol",{editVol:DATA.volunteers.find(v=>v.id===id),confirmDelVol:null});
+      go("editVol",{editVol:DATA.volunteers.find(v=>v.id===id),confirmDelVol:null,
+                    confirmVolTitle:null,pendingVol:null});
       break;
     case "saveVolEdit": {
       const cur=DATA.volunteers.find(v=>v.id===id);
@@ -3186,10 +3216,20 @@ app.addEventListener("click",async e=>{
       const roleKey=(document.getElementById("ev_rolekey")||{}).value||"volunteer";
       const email=(document.getElementById("ev_email")||{}).value.trim();
       const days=[...document.querySelectorAll(".ev_day:checked")].map(x=>x.value);
-      /* Keep the free-text label (e.g. "Snacks Leader", "CDC Administrator")
-         when the role hasn't changed — the seeded roster carries job titles the
-         nine role keys don't cover, and overwriting them loses real detail. */
-      const role=(roleKey===cur.roleKey && cur.role)?cur.role:ROLE_LABEL(roleKey);
+      const role=(document.getElementById("ev_role")||{}).value.trim()||ROLE_LABEL(roleKey);
+      /* Who gets a login is decided by provision_users.py, and for eight people
+         on this roster the ONLY thing making them eligible is the word "leader"
+         in their job title — their access level is plain `volunteer`. Retitling
+         them would quietly cost them their sign-in, so warn before it happens.
+         Inline, like the remove confirm — a browser dialog would freeze the app. */
+      if(loginEligible(cur) && !loginEligible({roleKey,role}) && state.confirmVolTitle!==cur.id){
+        state.confirmVolTitle=cur.id;
+        state.pendingVol={id:cur.id,name,roleKey,role,email,days,
+          phone:(document.getElementById("ev_phone")||{}).value.trim()};
+        render();
+        break;
+      }
+      state.confirmVolTitle=null; state.pendingVol=null;
       await db.saveVolunteer({id:cur.id,name,roleKey,role,email,
         phone:(document.getElementById("ev_phone")||{}).value.trim(),days});
       const saved=DATA.volunteers.find(v=>v.id===cur.id);

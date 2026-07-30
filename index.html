@@ -737,6 +737,21 @@ const demoDB = {
 /* ---- Supabase adapter (used only when LIVE) ---- */
 function loadScript(src){return new Promise((res,rej)=>{const el=document.createElement("script");el.src=src;el.onload=res;el.onerror=rej;document.head.appendChild(el);});}
 let SB=null;
+/* supabase-js RESOLVES on a rejected write — it returns {error} rather than
+   throwing — so every `await SB.from(…)` here looked successful no matter what.
+   That bit for real on 2026-07-29: an expired session made 21 flag writes fail
+   silently and the code reported all 21 as saved. At the check-in table the same
+   thing means a volunteer sees a child marked out who is still in the building.
+   Say so, out loud, every time. */
+function mustWrite(res, what){
+  if(!res || !res.error) return res;
+  const msg=String(res.error.message||"");
+  const auth=/jwt|token|expired|not authenticated|401/i.test(msg);
+  console.error("write failed:", what, res.error);
+  toast(auth ? ("Not saved — signed out. Sign in again, then redo the "+what+".")
+             : ("Not saved — "+what+" didn't go through. Check the connection and try again."));
+  return res;
+}
 const liveDB = {
   async loadAll(){
     const {data:children}=await SB.from("children").select("*").order("last_name");
@@ -771,19 +786,19 @@ const liveDB = {
     DATA.activity.unshift(entry);
   },
   async checkIn(childId,day,by){
-    await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_in_at:nowISO(),checked_in_by:by,checked_out_at:null,checked_out_by:null,released_to:null},{onConflict:"child_id,event_date"});
+    mustWrite(await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_in_at:nowISO(),checked_in_by:by,checked_out_at:null,checked_out_by:null,released_to:null},{onConflict:"child_id,event_date"}),"check-in");
     await this.loadAll();
   },
   async undoCheckIn(childId,day){
-    await SB.from("attendance").delete().eq("child_id",childId).eq("event_date",day);
+    mustWrite(await SB.from("attendance").delete().eq("child_id",childId).eq("event_date",day),"undo check-in");
     await this.loadAll();
   },
   async checkOut(childId,day,releasedTo,by){
-    await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_out_at:nowISO(),checked_out_by:by,released_to:releasedTo},{onConflict:"child_id,event_date"});
+    mustWrite(await SB.from("attendance").upsert({child_id:childId,event_date:day,checked_out_at:nowISO(),checked_out_by:by,released_to:releasedTo},{onConflict:"child_id,event_date"}),"check-out");
     await this.loadAll();
   },
   async saveChild(child, applyToFamily){
-    await SB.from("children").upsert(mapChildToDb(child));
+    mustWrite(await SB.from("children").upsert(mapChildToDb(child)),"save");
     if(applyToFamily && child.familyId){
       await SB.from("children").update({parent:child.parent}).eq("family_id",child.familyId).neq("id",child.id);
     }
@@ -796,11 +811,11 @@ const liveDB = {
   async saveAnnouncement(a){ await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}); await this.loadAll(); },
   async deleteAnnouncement(id){ await SB.from("announcements").delete().eq("id",id); await this.loadAll(); },
   async saveScheduleLoc(map){ await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}); DATA.scheduleLoc=map; },
-  async importChildren(rows){ await SB.from("children").insert(rows.map(mapChildToDb)); await this.loadAll(); },
+  async importChildren(rows){ mustWrite(await SB.from("children").insert(rows.map(mapChildToDb)),"import"); await this.loadAll(); },
   // Used by the merge import and the roster "danger zone". Attendance rows carry
   // `on delete cascade`, so a child's check-ins go with them.
   async deleteChildren(ids){
-    for(let i=0;i<ids.length;i+=100){ await SB.from("children").delete().in("id",ids.slice(i,i+100)); }
+    for(let i=0;i<ids.length;i+=100){ mustWrite(await SB.from("children").delete().in("id",ids.slice(i,i+100)),"removal"); }
     await this.loadAll();
   },
   // Bulk save for the merge import. saveChild() reloads every table on each
@@ -808,7 +823,7 @@ const liveDB = {
   // the upserts and reloads once at the end.
   async saveChildren(rows){
     const mapped=rows.map(mapChildToDb);
-    for(let i=0;i<mapped.length;i+=100){ await SB.from("children").upsert(mapped.slice(i,i+100)); }
+    for(let i=0;i<mapped.length;i+=100){ mustWrite(await SB.from("children").upsert(mapped.slice(i,i+100)),"roster save"); }
     await this.loadAll();
   }
 };

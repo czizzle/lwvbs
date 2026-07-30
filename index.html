@@ -717,7 +717,12 @@ const demoDB = {
     demoSave(s); DATA.announcements=s.announcements;
   },
   async deleteAnnouncement(id){
-    const s=demoStore(); s.announcements=(s.announcements||[]).filter(a=>a.id!==id);
+    const s=demoStore(); s.announcements=(s.announcements||[]).filter(a=>String(a.id)!==String(id));
+    demoSave(s); DATA.announcements=s.announcements;
+  },
+  async updateAnnouncement(id,text,image){
+    const s=demoStore();
+    s.announcements=(s.announcements||[]).map(a=>String(a.id)===String(id)?{...a,text,image:image||"",editedAt:nowISO()}:a);
     demoSave(s); DATA.announcements=s.announcements;
   },
   async saveScheduleLoc(map){
@@ -832,6 +837,10 @@ const liveDB = {
   },
   async saveAnnouncement(a){ mustWrite(await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}),"announcement"); await this.loadAll(); },
   async deleteAnnouncement(id){ mustWrite(await SB.from("announcements").delete().eq("id",id),"announcement removal"); await this.loadAll(); },
+  async updateAnnouncement(id,text,image){
+    mustWrite(await SB.from("announcements").update({text,image_url:image||null}).eq("id",id),"announcement change");
+    await this.loadAll();
+  },
   async saveScheduleLoc(map){ mustWrite(await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}),"station locations"); DATA.scheduleLoc=map; },
   async importChildren(rows){ mustWrite(await SB.from("children").insert(rows.map(mapChildToDb)),"import"); await this.loadAll(); },
   // Used by the merge import and the roster "danger zone". Attendance rows carry
@@ -1834,7 +1843,15 @@ function renderVolunteers(){
   const canEdit=can("editVolunteer")||currentRoleKey()==="director"||currentRoleKey()==="asst";
   const dayFilter=state.fVolDay;
   const q=(state.search||"").toLowerCase();
-  const list=DATA.volunteers.filter(v=>(!dayFilter||((v.days||[]).includes(dayFilter))) && (!q||(v.name||"").toLowerCase().includes(q)||ROLE_LABEL(v.roleKey).toLowerCase().includes(q)));
+  /* Search the JOB TITLE too, not just the access-level label. 23 of the 44
+     people on the roster are shown as something the nine access levels can't
+     express (Snacks Leader, Tech Goddess, Craft Assistant) — that string is what
+     the row displays and what the Job grouping uses, so "snacks" finding nobody
+     made the box look broken. The placeholder promised "name or role" all along. */
+  const list=DATA.volunteers.filter(v=>(!dayFilter||((v.days||[]).includes(dayFilter))) && (!q
+    || (v.name||"").toLowerCase().includes(q)
+    || (v.role||"").toLowerCase().includes(q)
+    || ROLE_LABEL(v.roleKey).toLowerCase().includes(q)));
   /* A login-eligible volunteer with no email can never sign in, and the mistake
      is invisible until they're standing at the door on day one. Say it on the
      row. (Same rule the provisioner uses.) */
@@ -2122,11 +2139,25 @@ function renderKitchen(){
 
 function renderAnnouncements(){
   const anns=DATA.announcements||[];
-  const rows=anns.map(a=>`<div class="ann">
-    <div class="txt">${esc(a.text)}</div>
-    ${a.image?`<img src="${esc(a.image)}" alt="">`:""}
-    <div class="who">📣 ${esc(a.by||"Team")} · ${new Date(a.at).toLocaleString()} ${(currentRoleKey()==="director"||currentRoleKey()==="asst")?`· <a class="link" data-act="delAnn" data-id="${a.id}">delete</a>`:""}</div>
-  </div>`).join("") || `<div class="empty">No announcements yet.</div>`;
+  const canManage=currentRoleKey()==="director"||currentRoleKey()==="asst";
+  const rows=anns.map(a=>{
+    /* Editing in place rather than delete-and-repost: a re-post jumps to the top
+       of the board and loses the original time, which matters when the verse or
+       the note is pinned to a particular day. */
+    if(canManage && String(state.editAnn)===String(a.id)) return `<div class="ann">
+      <div class="form">
+        <textarea id="anned_text">${esc(a.text)}</textarea>
+        <label>Picture of the day (optional image link)</label>
+        <input id="anned_img" value="${esc(a.image||"")}" placeholder="https://…">
+        <button class="btn blue" data-act="saveAnn" data-id="${a.id}" style="margin-top:10px">Save changes</button>
+        <button class="btn ghost" data-act="cancelAnn" style="margin-top:8px">Cancel</button>
+      </div></div>`;
+    return `<div class="ann">
+      <div class="txt">${esc(a.text)}</div>
+      ${a.image?`<img src="${esc(a.image)}" alt="">`:""}
+      <div class="who">📣 ${esc(a.by||"Team")} · ${new Date(a.at).toLocaleString()}${a.editedAt?" · edited":""} ${canManage?`· <a class="link" data-act="editAnn" data-id="${a.id}">edit</a> · <a class="link" data-act="delAnn" data-id="${a.id}">delete</a>`:""}</div>
+    </div>`;
+  }).join("") || `<div class="empty">No announcements yet.</div>`;
   app.innerHTML = topbar("Announcements","Team news for the day",true,false) + `
     <div class="content">
       ${can("announcePost")?`<div class="form panel">
@@ -3269,7 +3300,20 @@ app.addEventListener("click",async e=>{
       go("announcements"); toast("📣 Posted");
       break;
     }
-    case "delAnn": { await db.deleteAnnouncement(id); render(); toast("Deleted"); break; }
+    case "delAnn": { await db.deleteAnnouncement(id); state.editAnn=null; render(); toast("Deleted"); break; }
+    case "editAnn": { state.editAnn=id; render(); break; }
+    case "cancelAnn": { state.editAnn=null; render(); break; }
+    case "saveAnn": {
+      const text=((document.getElementById("anned_text")||{}).value||"").trim();
+      if(!text){ toast("Announcement can't be empty"); break; }
+      const img=((document.getElementById("anned_img")||{}).value||"").trim();
+      await db.updateAnnouncement(id,text,img);
+      const saved=(DATA.announcements||[]).find(a=>String(a.id)===String(id));
+      if(!saved||saved.text!==text){ toast("⚠️ Not saved — please try again."); break; }
+      await db.logActivity({at:nowISO(),user:actor(),action:"Edited an announcement"});
+      state.editAnn=null; render(); toast("Announcement updated");
+      break;
+    }
 
     case "dlSummary": exportSummary(); break;
     case "dlFull": exportFull(); break;

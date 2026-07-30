@@ -776,11 +776,11 @@ const liveDB = {
     DATA.messages=(msgs||[]).map(m=>({id:m.id,by:m.by_name,byEmail:m.by_email,at:m.at,text:m.text}));
   },
   async setRSVP(eventId,who,status){
-    if(status==="clear"){ await SB.from("event_rsvps").delete().eq("event_id",eventId).eq("who",who); }
-    else { await SB.from("event_rsvps").upsert({event_id:eventId,who,status},{onConflict:"event_id,who"}); }
+    if(status==="clear"){ mustWrite(await SB.from("event_rsvps").delete().eq("event_id",eventId).eq("who",who),"RSVP"); }
+    else { mustWrite(await SB.from("event_rsvps").upsert({event_id:eventId,who,status},{onConflict:"event_id,who"}),"RSVP"); }
     await this.loadAll();
   },
-  async postMessage(m){ await SB.from("messages").insert({by_name:m.by,by_email:m.byEmail||null,text:m.text,at:m.at||nowISO()}); await this.loadAll(); },
+  async postMessage(m){ mustWrite(await SB.from("messages").insert({by_name:m.by,by_email:m.byEmail||null,text:m.text,at:m.at||nowISO()}),"message"); await this.loadAll(); },
   async logActivity(entry){
     await SB.from("activity_log").insert({user_email:entry.user,action:entry.action,at:entry.at||nowISO()});
     DATA.activity.unshift(entry);
@@ -800,17 +800,26 @@ const liveDB = {
   async saveChild(child, applyToFamily){
     mustWrite(await SB.from("children").upsert(mapChildToDb(child)),"save");
     if(applyToFamily && child.familyId){
-      await SB.from("children").update({parent:child.parent}).eq("family_id",child.familyId).neq("id",child.id);
+      mustWrite(await SB.from("children").update({parent:child.parent}).eq("family_id",child.familyId).neq("id",child.id),"parent details for the other children in the family");
     }
     await this.loadAll();
   },
+  /* `volunteers.id` is a text primary key with no default, and nothing upstream
+     minted one — the Add-volunteer form doesn't carry an id, so every add sent
+     id:undefined, Postgres rejected the row (23502 not-null), and this was the
+     one write path with no mustWrite() around it. The screen still said
+     "Added". That is exactly how Todd's CDC teachers vanished on 2026-07-30:
+     nine taps, nine toasts, zero rows. Mint the id here and say so when a write
+     fails. */
   async saveVolunteer(v){
-    await SB.from("volunteers").upsert({id:v.id,name:v.name,role_key:v.roleKey,role:v.role||ROLE_LABEL(v.roleKey),email:v.email,phone:v.phone,days:v.days||[]});
+    const row={id:v.id||uid(),name:v.name,role_key:v.roleKey,role:v.role||ROLE_LABEL(v.roleKey),
+               email:v.email||"",phone:v.phone||"",days:v.days||[]};
+    mustWrite(await SB.from("volunteers").upsert(row),"volunteer");
     await this.loadAll();
   },
-  async saveAnnouncement(a){ await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}); await this.loadAll(); },
-  async deleteAnnouncement(id){ await SB.from("announcements").delete().eq("id",id); await this.loadAll(); },
-  async saveScheduleLoc(map){ await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}); DATA.scheduleLoc=map; },
+  async saveAnnouncement(a){ mustWrite(await SB.from("announcements").insert({by_name:a.by,text:a.text,image_url:a.image||null,at:a.at||nowISO()}),"announcement"); await this.loadAll(); },
+  async deleteAnnouncement(id){ mustWrite(await SB.from("announcements").delete().eq("id",id),"announcement removal"); await this.loadAll(); },
+  async saveScheduleLoc(map){ mustWrite(await SB.from("app_settings").upsert({key:"scheduleLoc",value:map}),"station locations"); DATA.scheduleLoc=map; },
   async importChildren(rows){ mustWrite(await SB.from("children").insert(rows.map(mapChildToDb)),"import"); await this.loadAll(); },
   // Used by the merge import and the roster "danger zone". Attendance rows carry
   // `on delete cascade`, so a child's check-ins go with them.
@@ -2922,7 +2931,12 @@ function collectChildForm(){
   const days=[...document.querySelectorAll(".f_day:checked")].map(x=>x.value);
   const base=state.editChild?JSON.parse(JSON.stringify(state.editChild)):{};
   const child=Object.assign(base,{
-    id:(state.editChild&&state.editChild.id)||"",
+    /* A new child used to come through with id:"" — not null, so Postgres took
+       it, and the SECOND hand-added child upserted onto the same empty primary
+       key and silently replaced the first. The demo adapter hid this because it
+       minted an id of its own on the way in. Mint it here, where both adapters
+       see it. (Felix Wimer, added 2026-07-30, was sitting on the blank id.) */
+    id:(state.editChild&&state.editChild.id)||uid(),
     familyId:(state.editChild&&state.editChild.familyId)||uid(),
     first:gv("f_first"),last:gv("f_last"),grade:gv("f_grade"),gender:gv("f_gender"),dob:gv("f_dob"),crew:gv("f_crew"),
     attendsCDC:gc("f_cdc"),cdcRoom:gv("f_room"),days:days.length?days:["Mon","Tue","Wed","Thu"],
@@ -3102,8 +3116,18 @@ app.addEventListener("click",async e=>{
       const name=(document.getElementById("vname")||{}).value.trim();
       if(!name){toast("Enter a name");break;}
       const roleKey=(document.getElementById("vrolekey")||{}).value||"volunteer";
-      await db.saveVolunteer({name,roleKey,role:ROLE_LABEL(roleKey),email:(document.getElementById("vemail")||{}).value.trim(),phone:(document.getElementById("vphone")||{}).value.trim(),days:["Mon","Tue","Wed","Thu"]});
-      go("volunteers"); toast("Added "+name);
+      const vemail=(document.getElementById("vemail")||{}).value.trim();
+      await db.saveVolunteer({name,roleKey,role:ROLE_LABEL(roleKey),email:vemail,phone:(document.getElementById("vphone")||{}).value.trim(),days:["Mon","Tue","Wed","Thu"]});
+      /* Don't claim it worked — check the reloaded roster. A toast that lies is
+         worse than an error: Todd added the same teachers twice trying to make
+         it stick. */
+      if(!DATA.volunteers.some(v=>(v.name||"").trim().toLowerCase()===name.toLowerCase())){
+        toast("⚠️ "+name+" was NOT saved. Nothing changed — please try again.");
+        break;
+      }
+      await db.logActivity({at:nowISO(),user:actor(),action:"Added volunteer: "+name+" ("+ROLE_LABEL(roleKey)+")"});
+      go("volunteers");
+      toast("Added "+name+(vemail?"":" — no email, so they can't be given a login"));
       break;
     }
 

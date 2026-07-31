@@ -245,6 +245,15 @@
   .chk input{width:22px;height:22px}
 
   .banner{background:#fff7e6;border:1px solid #f0d9a8;color:#8a5a00;border-radius:12px;padding:10px 14px;font-size:13.5px;margin-bottom:14px;font-weight:600}
+  /* Verse of the day — for the team. Softer than .banner on purpose: a banner
+     means "act on this", this one is just encouragement, so no icon and no
+     shouting. Serif italic to set it apart from the working UI. */
+  .verse{background:#fdeef3;border:1px solid #f4cfdd;color:#8a3b57;border-radius:14px;
+    padding:14px 16px;margin-bottom:14px;font-size:15px;line-height:1.5;
+    font-family:Georgia,"Times New Roman",serif;font-style:italic}
+  .verse .ref{display:block;margin-top:8px;font-style:normal;font-weight:700;
+    font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;opacity:.72}
+  @media print{ .verse{display:none} }
 
   /* Schedule + snack */
   .slot{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow)}
@@ -389,6 +398,17 @@ const CONFIG = {
     "Departure (community kids)":"Sanctuary"
   },
   schedule: [],
+  // A note of encouragement for the team, one per morning. Keyed by event date,
+  // so only the selected day's verse is ever on screen — nothing shows in
+  // advance. ESV. Psalm 118:24 is deliberately ESV rather than NIV: the wording
+  // people expect ("This is the day that the LORD has made") is ESV/NKJV/KJV;
+  // the 2011 NIV reads "The LORD has done it this very day."
+  verses: {
+    "2026-08-03": {text:"Let the little children come to me and do not hinder them, for to such belongs the kingdom of heaven.", ref:"Matthew 19:14"},
+    "2026-08-04": {text:"Look at the birds of the air: they neither sow nor reap nor gather into barns, and yet your heavenly Father feeds them. Are you not of more value than they?", ref:"Matthew 6:26"},
+    "2026-08-05": {text:"This is the day that the LORD has made; let us rejoice and be glad in it.", ref:"Psalm 118:24"},
+    "2026-08-06": {text:"Rooted and built up in him and established in the faith, just as you were taught, abounding in thanksgiving.", ref:"Colossians 2:7"}
+  },
   eventCalendar: [
     {date:"2026-07-18", time:"9:00–11:30 am", title:"Decorations prep", location:"Kloehn barn"},
     {date:"2026-07-31", time:"5:30–8:00 pm", title:"Setup"},
@@ -1176,6 +1196,15 @@ function guard(cap,view){ if(cap && !can(cap)){ renderNoAccess(view); return fal
    ============================================================ */
 const app=document.getElementById("app");
 
+/* The day's verse, for the team rather than the families. Follows whichever day
+   is selected, so a volunteer never sees tomorrow's in advance. No author, no
+   date, no timestamp — it isn't an announcement and shouldn't read like one. */
+function verseBanner(){
+  const v=(CONFIG.verses||{})[state.day];
+  if(!v) return "";
+  return `<div class="verse">${esc(v.text)}<span class="ref">${esc(v.ref)}</span></div>`;
+}
+
 function topbar(title,sub,showBack,showDay,nav){
   const pv = state.previewAs
     ? `<div class="previewbar" data-act="exitPreview">👁 Seeing what <b>${esc(state.previewAs.name)}</b> sees (${esc(state.previewAs.role||ROLE_LABEL(state.previewAs.roleKey))})<span class="x">✕ Exit</span></div>`
@@ -1504,6 +1533,7 @@ function renderHome(){
       ${LIVE?"":(state.realLoaded
         ? `<div class="banner" style="background:#fdeaea;border-color:#f3c9c9;color:#8a1c1c">🔒 REAL roster loaded on THIS device only (local, not synced across phones). Treat this like real family data. ${roleChip}</div>`
         : `<div class="banner">👋 PREVIEW — these are sample children so you can try everything. Nothing here is real, and nothing is saved. ${roleChip}</div>`)}
+      ${verseBanner()}
       ${helperBar()}
       ${annBlock}
       ${reviewTile}${myDayTile}

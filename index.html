@@ -362,6 +362,11 @@ const CONFIG = {
   // 11:30 finish. The warning fires first so nobody is dropped mid-checkout.
   sessionHours: 5,
   sessionWarnMinutes: 20,
+  // Sign-in by text. Needs the Supabase phone provider (Twilio) AND A2P/10DLC
+  // carrier registration, which takes 5-15 business days — so it is off for
+  // Aug 2026 and everyone signs in by email link. Set true once the provider is
+  // live; the OTP screens are already built and wired.
+  phoneSignIn: false,
   eventName: "Rainforest Falls VBS",
   location:  "Living Word Lutheran · Jackson, WI",
   tagline:   "Exploring the Nature of God",
@@ -2329,11 +2334,18 @@ function renderConsent(){
 }
 
 function renderLogin(err){
-  const mode = state.loginMode||"email";
-  const seg = `<div class="segmented">
+  /* Sign-in by text is BUILT but the Supabase phone provider is off, so the
+     endpoint answers `phone_provider_disabled`. Turning it on means Twilio plus
+     A2P/10DLC carrier registration — 5-15 business days, longer if AT&T reviews
+     it — so it cannot be live for Aug 2026. Showing the tab would hand a
+     volunteer a button that fails at the check-in table. Flip
+     CONFIG.phoneSignIn back to true the day the provider is enabled; nothing
+     else needs changing, the whole OTP path below still works. */
+  const mode = CONFIG.phoneSignIn ? (state.loginMode||"email") : "email";
+  const seg = CONFIG.phoneSignIn ? `<div class="segmented">
       <button class="seg ${mode==='email'?'on':''}" data-act="loginMode" data-m="email">✉️ Email link</button>
       <button class="seg ${mode==='phone'?'on':''}" data-act="loginMode" data-m="phone">📱 Text me a code</button>
-    </div>`;
+    </div>` : "";
   let body;
   if(state.otpSent){
     body = `

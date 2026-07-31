@@ -517,7 +517,8 @@ let state = {
   pickReturn:"home", statKind:null,
   fCrew:"", fRoom:"", fCommunity:false, fVolDay:"", addingPickup:false, editLoc:false,
   groupBy:{}, openGroups:{}, sortBy:{}, groupAll:{}, magicSent:"", previewAs:null,
-  loginMode:"email", otpSent:"", impMode:"sync", impDrop:{}
+  loginMode:"email", otpSent:"", impMode:"sync", impDrop:{},
+  showOffDay:false, confirmUndoOut:null
 };
 let authed = false;
 function actor(){ return state.currentUser || state.currentVolunteer || "Volunteer"; }
@@ -691,6 +692,15 @@ const demoDB = {
     const s=demoStore(); if(s.attendance[day]) delete s.attendance[day][childId];
     demoSave(s); DATA.attendance=s.attendance;
   },
+  /* Clears the check-OUT and leaves the child checked in. Deliberately does NOT
+     touch inAt: the old workaround (tap "Check in now" again) overwrote the real
+     arrival time, so a 9:02 arrival became whenever the mistake was noticed and
+     the attendance report quietly lied. */
+  async undoCheckOut(childId,day){
+    const s=demoStore(); const r=(s.attendance[day]||{})[childId];
+    if(r){ r.outAt=null; r.outBy=""; r.releasedTo=""; }
+    demoSave(s); DATA.attendance=s.attendance;
+  },
   async checkOut(childId,day,releasedTo,by){
     const s=demoStore(); s.attendance[day]=s.attendance[day]||{};
     const r=s.attendance[day][childId]||{inAt:nowISO(),inBy:""};
@@ -810,6 +820,14 @@ const liveDB = {
   },
   async undoCheckIn(childId,day){
     mustWrite(await SB.from("attendance").delete().eq("child_id",childId).eq("event_date",day),"undo check-in");
+    await this.loadAll();
+  },
+  // UPDATE, not upsert: an upsert would have to restate checked_in_at and could
+  // overwrite the real arrival time. This touches only the three check-out columns.
+  async undoCheckOut(childId,day){
+    mustWrite(await SB.from("attendance")
+      .update({checked_out_at:null,checked_out_by:null,released_to:null})
+      .eq("child_id",childId).eq("event_date",day),"undo check-out");
     await this.loadAll();
   },
   async checkOut(childId,day,releasedTo,by){
@@ -1566,6 +1584,7 @@ function renderCheckList(mode){
   };
   const dflt="none";
   const pg=mode==='in'?"checkin":"checkout";
+  const extraSection = can(mode==='in'?"checkin":"checkout") ? offListSection(mode,day,q) : "";
   const dayCtl = locked
     ? `<span class="lock">📆 Today only — ${dayName(realToday())}</span>`
     : "";
@@ -1580,8 +1599,56 @@ function renderCheckList(mode){
         : `<div class="banner" style="background:#e7f0f6;border-color:#c9dcea;color:#0b5c6e">Tap a name to check the child OUT to a guardian. ${list.length} here now.</div>`}
       ${groupControls(pg,"child",dflt)}
       ${groupedList(pg, list, rowFn, "child", dflt)}
+      ${extraSection}
     </div>`;
   focusSearch();
+}
+
+/* Both check screens hide children whose state puts them outside the expected
+   flow, and until now there was no way back from either one on the screen where
+   it went wrong:
+     - check OUT the wrong child and they vanish from check-in AND check-out
+     - a child registered for other days never appears on today's check-in
+   The recovery existed (Roster -> the child -> "Check in now") but nobody would
+   find it with a parent waiting, and it reset the real arrival time. These two
+   sections put the way back where the mistake happens. */
+function offListSection(mode,day,q){
+  if(mode==="out"){
+    const out=sortedChildren().filter(c=>statusOf(c,day).code==="out" && matches(c,q));
+    if(!out.length) return "";
+    const rows=out.map(c=>{
+      const r=(DATA.attendance[day]||{})[c.id]||{};
+      if(state.confirmUndoOut===c.id) return `<div class="panel" style="border-color:#c9dcea">
+        <p class="mini"><b>${esc(fullName(c))}</b> was checked out at ${fmtTime(r.outAt)}${r.releasedTo?" to <b>"+esc(r.releasedTo)+"</b>":""}.
+        Undo only if that was a mistake and the child is still here — it puts them back on the "here now" list.</p>
+        <button class="btn blue" data-act="undoCheckoutConfirm" data-id="${c.id}">Yes, undo the check-out</button>
+        <button class="btn ghost" data-act="undoCheckoutCancel" style="margin-top:8px">Leave it</button></div>`;
+      return `<div class="kid" data-act="undoCheckoutConfirm" data-id="${c.id}" style="opacity:.72">
+        ${avatar(c)}
+        <div class="info"><div class="nm">${esc(fullName(c))}</div>
+          <div class="meta">👋 Out at ${fmtTime(r.outAt)}${r.releasedTo?" to "+esc(r.releasedTo):""}</div></div>
+        <span class="status">Undo</span></div>`;
+    }).join("");
+    return `<div class="grouphd" style="margin-top:20px">Already picked up <span class="cnt">${out.length}</span></div>
+      <p class="mini" style="margin:-4px 0 8px">Checked out the wrong child? Tap them here to undo it. Their check-in time is kept.</p>
+      ${rows}`;
+  }
+  const others=sortedChildren().filter(c=>{
+    const s=statusOf(c,day).code;
+    return s!=="in" && s!=="out" && !registeredForDay(c,day) && matches(c,q);
+  });
+  if(!others.length) return "";
+  if(!state.showOffDay)
+    return `<button class="btn ghost no-print" data-act="showOffDay" style="margin-top:18px">Someone not on today's list? (${others.length})</button>`;
+  const rows=others.map(c=>`<div class="kid" data-act="doCheckin" data-id="${c.id}" style="opacity:.72">
+      ${avatar(c)}
+      <div class="info"><div class="nm">${esc(fullName(c))} ${dotset(c)}</div>
+        <div class="meta">${esc(c.crew)} · registered for ${esc((c.days||[]).join(", ")||"no days")}</div></div>
+      <span class="chev">＋</span></div>`).join("");
+  return `<div class="grouphd" style="margin-top:20px">Not registered for today <span class="cnt">${others.length}</span></div>
+    <p class="mini" style="margin:-4px 0 8px">They signed up for other days. Tap to check them in anyway.</p>
+    ${rows}
+    <button class="btn ghost no-print" data-act="hideOffDay" style="margin-top:10px">Hide these</button>`;
 }
 
 function renderCheckoutConfirm(){
@@ -3217,6 +3284,26 @@ app.addEventListener("click",async e=>{
       go("checkout"); toast("↩️ Check-in undone for "+fullName(c));
       break;
     }
+    case "showOffDay": state.showOffDay=true; render(); break;
+    case "hideOffDay": state.showOffDay=false; render(); break;
+    case "undoCheckoutConfirm": {
+      const c=DATA.children.find(x=>x.id===id); if(!c) break;
+      if(!can("checkout")){ toast("Only check-in staff can undo a check-out"); break; }
+      const r=(DATA.attendance[state.day]||{})[c.id]||{};
+      const to=r.releasedTo||"";
+      // Two taps, like removing a child — an accidental undo puts a child back on
+      // the "here now" list who has actually gone home, which is the worse error.
+      if(state.confirmUndoOut!==c.id){ state.confirmUndoOut=c.id; render(); break; }
+      await db.undoCheckOut(c.id,state.day);
+      const still=((DATA.attendance[state.day]||{})[c.id]||{}).outAt;
+      if(still){ toast("⚠️ Not undone — please try again."); break; }
+      await db.logActivity({at:nowISO(),user:actor(),
+        action:"Undid check-out for "+fullName(c)+(to?" (was released to "+to+")":"")});
+      state.confirmUndoOut=null;
+      go("checkout"); toast("↩️ "+fullName(c)+" is checked back in");
+      break;
+    }
+    case "undoCheckoutCancel": state.confirmUndoOut=null; render(); break;
 
     case "saveChild": {
       const child=collectChildForm();

@@ -503,9 +503,16 @@ function normPhone(p){ let d=String(p||"").replace(/\D/g,""); if(d.length===11&&
 function toE164(p){ const d=normPhone(p); return d.length===10?"+1"+d:""; }
 // A signed-in user key is either an email ("a@b.com") or E.164 phone ("+1…").
 function sessionUserKey(u){ if(!u) return null; if(u.email) return String(u.email); if(u.phone) return "+"+String(u.phone).replace(/^\+/,""); return null; }
+/* trim() on both sides: provision_users.py lowercases AND strips the email
+   before creating the auth user, so a volunteers row carrying a stray space
+   (easy to type into Add-volunteer on a phone) would never match the session
+   key. No error, no clue — the person signs in fine and silently lands on the
+   `volunteer` fallback role in realRoleKey(), i.e. view-only with no Check In
+   button at the table. The 34 seeded emails are clean; this protects anyone
+   added during the event. */
 function volMatchesUser(v,k){
   if(!v||!k) return false;
-  if(String(k).includes("@")) return (v.email||"").toLowerCase()===String(k).toLowerCase();
+  if(String(k).includes("@")) return (v.email||"").trim().toLowerCase()===String(k).trim().toLowerCase();
   const kp=normPhone(k); return kp.length===10 && normPhone(v.phone)===kp;
 }
 // The signed-in person's REAL role (ignores any preview).
@@ -3697,7 +3704,12 @@ function prevView(){
 
   if(LIVE){
     try{
-      await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2");
+      // Pinned, not "@2". The floating major tag means jsdelivr can hand a
+      // volunteer's phone a library version published hours earlier that nobody
+      // has run this app against — 2.112.0 shipped 2026-08-03 07:34 UTC, the
+      // morning of day 1, and the CDN edge cache rolls within ~12h. 2.111.0 is
+      // what the app was built and tested on. Bump it deliberately, after VBS.
+      await loadScript("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.111.0");
       SB=window.supabase.createClient(CONFIG.supabaseUrl,CONFIG.supabaseAnonKey);
       db=liveDB;
       SB.auth.onAuthStateChange((_e,s)=>{ authed=!!s; if(s&&s.user) state.currentUser=sessionUserKey(s.user); });

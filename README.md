@@ -35,7 +35,7 @@ Reset anytime under **⋯ Info → Reset demo**.
 
 ## Going live (real sync across every phone, passwordless magic-link login)
 1. **Create a Supabase project** (or reuse one) and run `schema.sql` in the SQL editor.
-2. **Seed the data**: run `private/seed-real.sql` (children + all 34 volunteers).
+2. **Seed the data**: run `seed-real.sql` (repo root — children + volunteers).
 3. **Create login accounts** (operational roles only — leaders, check-in/out, station/snack
    leaders, pastor, CDC admin; ~19). Set your project keys and run the provisioner:
    ```

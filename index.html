@@ -1324,13 +1324,16 @@ const JOB_STATION={"bible leader":"Rooted Bible Adventures","games leader":"Wild
 function myVolForView(){ if(state.previewAs && canPreview()) return (DATA.volunteers||[]).find(v=>v.id===state.previewAs.id)||null; return meVol(); }
 function myStation(){ const v=myVolForView(); return v?(JOB_STATION[(v.role||"").toLowerCase()]||null):null; }
 
-/* ---------- pickup text (SMS the parent on check-out) ----------
-   Two paths, both live:
-   • Auto — a Supabase Edge Function ("send-sms") sends from the VBS Twilio
-     number. Preferred once deployed (supabase/functions/send-sms). Silent no-op
-     if it isn't deployed yet, so check-out never blocks.
-   • Manual — an sms: link opens the volunteer's own Messages app pre-filled.
-     Always works with zero backend; shown on the child page for checked-out kids. */
+/* ---------- pickup text (SMS the parent on check-out) — TURNED OFF 2026-08-03 ----------
+   Checking a child out texts nobody, and no text option is shown anywhere.
+   Both paths are gone from the UI; the helpers below are kept, unused, so the
+   feature can be switched back on without rewriting it:
+   • Auto — a Supabase Edge Function ("send-sms") from the VBS Twilio number
+     (supabase/functions/send-sms). Never deployed. Restore by putting the
+     notify checkbox back in renderCheckoutChild() and the trySendSms() call
+     back in the "confirmCheckout" case.
+   • Manual — an sms: link opening the volunteer's own Messages app. Restore by
+     putting the smsHref() button back on the child page for checked-out kids. */
 function notifyPhone(c){ const p=c.parent||{}; if((p.phone||"").trim()) return p.phone;
   const g=guardiansFor(c).find(x=>x.phone); return g?g.phone:""; }
 function parentLabel(c){ const p=c.parent||{}; const n=[p.first,p.last].filter(Boolean).join(" ").trim(); return n||"the parent"; }
@@ -1716,7 +1719,6 @@ function renderCheckoutConfirm(){
       ${can("addPickup")&&!state.addingPickup?`<button class="btn ghost" data-act="addPickup">＋ Add a pickup person</button>`:""}
       ${addForm}
       ${helperBar()}
-      ${notifyPhone(c)?`<label class="chk" style="margin:14px 2px 2px"><input type="checkbox" id="co_notify" checked><span style="font-size:15px;color:var(--ink)">📱 Text ${esc(parentLabel(c))} that ${esc(c.first)} was picked up</span></label>`:""}
       <button class="btn green" data-act="confirmCheckout" ${canConfirm?"":'style="opacity:.45;pointer-events:none"'}>✅ Confirm check-out</button>
       ${can("undoCheckin")?`<button class="btn ghost" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Checked in by mistake? Undo check-in</button>`:""}
       <button class="btn ghost" data-act="back">Cancel</button>
@@ -1842,7 +1844,6 @@ function renderChild(){
         ${em?`<div class="field"><div class="k">Emergency contact</div><div class="v">${esc(em.name)} (${esc(em.relationship||"")}) ${em.phone?`· <a class="link" href="tel:${esc((em.phone||'').replace(/[^0-9]/g,''))}">${esc(em.phone)}</a>`:""}</div></div>`:""}
       </div>
       ${can("checkout")&&st.code==="in"?`<button class="btn blue no-print" data-act="toCheckout" data-id="${c.id}">👋 Check out</button>`:""}
-      ${st.code==="out"&&notifyPhone(c)&&can("checkout")?`<a class="btn sms no-print" href="${esc(smsHref(notifyPhone(c),pickupMessage(c,st.rec&&st.rec.releasedTo)))}">📱 Text ${esc(parentLabel(c))} the pickup confirmation</a>`:""}
       ${can("checkin")&&st.code!=="in"?`<button class="btn green no-print" data-act="doCheckin" data-id="${c.id}">✅ Check in now</button>`:""}
       ${can("undoCheckin")&&st.code==="in"?`<button class="btn ghost no-print" data-act="undoCheckinConfirm" data-id="${c.id}">↩️ Undo check-in (mistake)</button>`:""}
       ${can("editChild")?`<button class="btn ghost no-print" data-act="editChild" data-id="${c.id}">✏️ Edit details</button>`:""}
@@ -3291,20 +3292,10 @@ app.addEventListener("click",async e=>{
     case "confirmCheckout": {
       const c=DATA.children.find(x=>x.id===state.selChild);
       const g=guardiansFor(c)[state.selGuardian];
-      const notify=(document.getElementById("co_notify")||{}).checked;
       await db.checkOut(c.id,state.day,g?g.name:"",actor());
       await db.logActivity({at:nowISO(),user:actor(),action:"Checked out "+fullName(c)+" to "+(g?g.name:"guardian")});
-      let smsNote="";
-      if(notify){
-        const ph=notifyPhone(c);
-        if(ph){
-          const sent=await trySendSms(ph, pickupMessage(c,g?g.name:""));
-          if(sent){ await db.logActivity({at:nowISO(),user:actor(),action:"Texted pickup confirmation to "+parentLabel(c)+" for "+fullName(c)}); smsNote=" · 📱 parent texted"; }
-          else smsNote=" · open "+c.first+" to text parent";
-        }
-      }
       go("checkout");
-      toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian")+smsNote);
+      toast("👋 "+fullName(c)+" released to "+(g?g.name:"guardian"));
       break;
     }
     case "undoCheckinConfirm": {
